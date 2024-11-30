@@ -1,1 +1,3 @@
-# inertia
+
+
+npx ts-node build.ts
