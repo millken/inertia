@@ -1,0 +1,1 @@
+import{m as t}from"./chunk-FFS3Z3FX.js";function p(n){let e=document.getElementById("app");e||(e=document.createElement("div"),e.id="app",document.body.appendChild(e)),t(n,{target:e})}export{p as mountApp};

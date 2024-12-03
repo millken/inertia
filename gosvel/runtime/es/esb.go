@@ -57,9 +57,10 @@ func DOM(flag *Flag) esbuild.BuildOptions {
 		// https://esbuild.github.io/api/#how-conditions-work
 		Conditions: []string{"browser", "import", "production"},
 		// Always bundle, use plugins to granularly mark files as external
-		Bundle:  true,
-		Plugins: []esbuild.Plugin{SvelteLoader()},
-		Loader:  make(map[string]esbuild.Loader),
+		Bundle:     true,
+		Plugins:    []esbuild.Plugin{SvelteLoader()},
+		Loader:     make(map[string]esbuild.Loader),
+		PublicPath: "/assets/",
 	}
 	// Support minifying
 	if flag.Minify {
