@@ -79,3 +79,18 @@ func (s *mux) Handler() http.Handler {
 func (s *mux) Addr() string {
 	return s.host + ":" + s.port
 }
+
+// ServeMemoryRequest is a helper function to serve a request from memory
+func (s *mux) ServeMemoryRequest(w http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		http.Error(w, "request is nil", http.StatusBadRequest)
+		return
+	}
+
+	if w == nil {
+		http.Error(w, "response writer is nil", http.StatusBadRequest)
+		return
+	}
+
+	s.router.ServeHTTP(w, r)
+}
