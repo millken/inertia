@@ -1,6 +1,6 @@
 module demo
 
-go 1.23.0
+go 1.24.4
 
 replace github.com/millken/inertia => ../
 

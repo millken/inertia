@@ -1,6 +1,6 @@
 module github.com/millken/inertia/gosvel
 
-go 1.23.0
+go 1.24.4
 
 require (
 	github.com/evanw/esbuild v0.24.0

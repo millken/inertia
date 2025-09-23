@@ -102,5 +102,22 @@ func (rg *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func pathjoin(prefix, route string) string {
-	return strings.TrimSuffix(prefix, "/") + "/" + strings.TrimPrefix(route, "/")
+	if prefix == "" {
+		return route
+	}
+	if route == "" {
+		return prefix
+	}
+
+	pLast := prefix[len(prefix)-1] == '/'
+	rFirst := route[0] == '/'
+
+	switch {
+	case pLast && rFirst:
+		return prefix + route[1:]
+	case !pLast && !rFirst:
+		return prefix + "/" + route
+	default:
+		return prefix + route
+	}
 }

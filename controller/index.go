@@ -5,9 +5,17 @@ import (
 	"strconv"
 
 	"github.com/brianvoe/gofakeit/v7"
+	"github.com/millken/inertia"
 	"github.com/millken/inertia/pkg/render"
 )
 
+func Hello(c *inertia.Context) {
+	c.Write([]byte("Hello, World!"))
+}
+
+func Panic(c *inertia.Context) {
+	panic("Something went wrong!")
+}
 func Index(w http.ResponseWriter, r *http.Request) {
 	render := render.FromContext(r.Context())
 

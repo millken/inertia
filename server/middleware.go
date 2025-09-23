@@ -68,38 +68,6 @@ func HttpDump(next http.Handler) http.Handler {
 	})
 }
 
-// logger is a middleware that logs the request method and URL
-// and the time it took to process the request.
-func Logger(next http.Handler) http.Handler {
-	logger := slog.Default()
-	if os.Getenv("GO_ENV") == "production" {
-		// Using json logger in production
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		lw, ok := w.(*responseWriter)
-		if !ok {
-			lw = &responseWriter{ResponseWriter: w}
-		}
-
-		defer func() {
-			status := cmp.Or(lw.Status, http.StatusOK)
-			logLevel := slog.LevelInfo
-
-			if status >= http.StatusInternalServerError {
-				logLevel = slog.LevelError
-			}
-
-			logger.Log(r.Context(), logLevel, "", "method", r.Method, "status", status, "url", r.URL.Path, "took", time.Since(start))
-		}()
-
-		next.ServeHTTP(lw, r)
-	})
-}
-
 // Recovery is a middleware that recovers from panics and logs the error.
 // The error stack trace is printed only when the application is in 'development' mode.
 func Recovery(next http.Handler) http.Handler {
