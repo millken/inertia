@@ -15,12 +15,12 @@ var (
 	defaultRootHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
-<inertia>head-meta</inertia>
+<!--inertia-head-meta-inertia-->
 </head>
 
 <body>
-  <div id="app" data-page="<inertia>data-page</inertia>"></div>
-  <script defer type="module" src="/main.js"></script>
+  <div id="app" data-page="<!--inertia-data-page-inertia-->"></div>
+  <script type="module" src="/main.js?v=<!--inertia-version-inertia-->"></script>
 </body>`
 )
 
@@ -77,8 +77,8 @@ func New(options ...Option) (*Engine, error) {
 		devAddr:            "http://localhost:5173",
 		addr:               ":5000",
 		rootHTML:           defaultRootHTML,
-		startTag:           "<inertia>",
-		endTag:             "</inertia>",
+		startTag:           "<!--inertia-",
+		endTag:             "-inertia-->",
 		MaxMultipartMemory: 32 << 20, // 32 MB
 		router:             router.New[HandlerFunc](),
 	}

@@ -6,7 +6,7 @@ if (typeof document !== 'undefined') {
 
 		const raw = el?.dataset?.page ?? '{}';
 		let page = {};
-		if (raw && raw !== '<inertia>data-page</inertia>') {
+		if (raw && raw !== '<!--inertia-data-page-inertia-->') {
 			try {
 				page = JSON.parse(raw) || {};
 			} catch (e) {
@@ -16,6 +16,9 @@ if (typeof document !== 'undefined') {
 		}
 
 		const { _ViEW_: _ViEW_, ...props } = page;
+		if (!_ViEW_) {
+			console.error('No view specified in page data');
+		}
 		const viewName = _ViEW_ ?? 'App';
 
 		try {

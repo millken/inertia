@@ -2,6 +2,7 @@ package inertia
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -318,6 +319,33 @@ func (c *Context) SetMeta(meta Meta) {
 	c.Meta = meta
 }
 
+func (c *Context) ClientIP() string {
+	// Check X-Forwarded-For header first
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can contain multiple IPs, the first one is the client IP
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// Check X-Real-IP header
+	if xrip := c.GetHeader("X-Real-IP"); xrip != "" {
+		return strings.TrimSpace(xrip)
+	}
+
+	// Fallback to RemoteAddr
+	if ip := c.Request.RemoteAddr; ip != "" {
+		// RemoteAddr can be in the form "IP:port", we need to extract the IP part
+		if colonPos := strings.LastIndex(ip, ":"); colonPos != -1 {
+			return ip[:colonPos]
+		}
+		return ip
+	}
+
+	return ""
+}
+
 func (c *Context) Render(view string) error {
 	c.data["_ViEW_"] = view
 
@@ -351,6 +379,8 @@ func (c *Context) Render(view string) error {
 		case "data-page":
 			pageJSON, _ := json.Marshal(c.data)
 			return htmlEscape(w, pageJSON)
+		case "version":
+			return w.Write(s2b(cmp.Or(c.Meta.Version, "0.0.0")))
 		default:
 		}
 		return 0, nil
