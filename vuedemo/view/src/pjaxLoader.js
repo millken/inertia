@@ -1,5 +1,4 @@
-import { createApp } from "vue";
-import { hasView, loadView } from './viewLoader.js'
+import { hasView, mountView } from './viewLoader.js'
 let win = typeof window !== "undefined" ? window : {}
 let doc = win.document || {}
 let elementProto = win.Element && win.Element.prototype
@@ -8,7 +7,6 @@ let supported = !!(
     elementProto && history.pushState
 )
 let origin = location ? (location.protocol + "//" + location.host) : ""
-let currentApp = null; // Track current Vue app for unmounting
 if (supported) {
     win.addEventListener("popstate", pjaxState);
 }
@@ -30,19 +28,24 @@ export function pjaxClick(el) {
 }
 function pjaxState(e) {
     if (e.state && e.state.pjaxUrl) {
-        const { View, ...props } = e.state.pjaxData;
-        loadAndMountComponent(e.state.pjaxUrl, View, props);
+        const { _ViEW_, ...props } = e.state.pjaxData;
+        loadAndMountComponent(e.state.pjaxUrl, _ViEW_, props);
     }
 }
 const handleClick = async (e) => {
     e.preventDefault();
     const el = e.currentTarget;
     try {
-        let response = await fetch(el.href, {
+        // 添加随机参数防止缓存
+        const url = new URL(el.href);
+        url.searchParams.set('_t', Date.now());
+        
+        let response = await fetch(url.toString(), {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
                 "X-PJAX": "true",
+                "X-Requested-With": "XMLHttpRequest",
             },
         });
 
@@ -53,7 +56,7 @@ const handleClick = async (e) => {
                 console.error("No view found");
                 window.location.reload();
             } else {
-                loadAndMountComponent(el.href,_ViEW_, props);
+                loadAndMountComponent(el.href, _ViEW_, props);
                 const info = {
                     pjaxUrl: el.href,
                     pjaxData: data,
@@ -88,20 +91,9 @@ function sameWindowOrigin(target, url) {
             url.indexOf(origin) === 0
         );
 }
-async function loadAndMountComponent(url,view, props) {
+async function loadAndMountComponent(url, view, props) {
     try {
-        if (!hasView(view)) {
-            throw new Error(`View ${view} not found`);
-        }
-        const component = await loadView(view);
-        // Unmount previous app if exists
-        if (currentApp) {
-            currentApp.unmount();
-        }
-        const target = document.getElementById("app") || document.body;
-        target.innerHTML = ""; // Clear content
-        currentApp = createApp(component, props);
-        currentApp.mount(target);
+        await mountView(view, props);
     } catch (error) {
         console.error("Error loading component:", error);
         // Fallback to full navigation on failure

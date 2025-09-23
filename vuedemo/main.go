@@ -26,6 +26,7 @@ func main() {
 	}
 	// Create Inertia instance
 	iner, _ := inertia.New(opts...)
+	defaultMeta := inertia.NewMeta().SetTitle("My Site").SetDescription("Welcome to my site").SetKeywords("inertia,go,vuejs")
 
 	// Add specific routes first
 	iner.Get("/", controller.Index)
@@ -37,7 +38,7 @@ func main() {
 	iner.ServeAsset("/", os.DirFS("./view/dist"))
 	// Add middleware first
 	iner.Use(middleware.Gzip(),
-		middleware.AccessLog(), middleware.Recovery())
+		middleware.AccessLog(), middleware.Recovery(), inertia.UseMeta(defaultMeta))
 	slog.Info(fmt.Sprintf("> Starting at http://%s", iner.Addr()))
 	err := iner.Serve()
 	if err != nil {

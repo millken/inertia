@@ -14,15 +14,12 @@ import (
 var (
 	defaultRootHTML = `<!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>inertia</title>
+<inertia>head-meta</inertia>
 </head>
 
 <body>
-  <div id="app" data-page="<%data-page%>"></div>
+  <div id="app" data-page="<inertia>data-page</inertia>"></div>
   <script defer type="module" src="/main.js"></script>
 </body>`
 )
@@ -80,8 +77,8 @@ func New(options ...Option) (*Engine, error) {
 		devAddr:            "http://localhost:5173",
 		addr:               ":5000",
 		rootHTML:           defaultRootHTML,
-		startTag:           "<%",
-		endTag:             "%>",
+		startTag:           "<inertia>",
+		endTag:             "</inertia>",
 		MaxMultipartMemory: 32 << 20, // 32 MB
 		router:             router.New[HandlerFunc](),
 	}
@@ -112,10 +109,6 @@ func (e *Engine) Get(path string, fn func(c *Context)) {
 
 func (e *Engine) Addr() string {
 	return e.addr
-}
-
-func (e *Engine) handleHttpRequest(c *Context) {
-
 }
 
 // ServeAsset serves static assets from the given path
