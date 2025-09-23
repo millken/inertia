@@ -1,6 +1,7 @@
 package inertia
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 )
@@ -22,7 +23,7 @@ var (
 
 		http.StatusInternalServerError: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Error(err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fmt.Fprintln(w, err)
 		},
 	}
 )

@@ -1,17 +1,22 @@
 package inertia
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"unsafe"
 )
 
 type Context struct {
-	Request *http.Request
-	Writer  http.ResponseWriter
-	Params  Params
+	writermem responseWriter
+	Request   *http.Request
+	Writer    ResponseWriter
+	Params    Params
 	// queryCache caches the query result from c.Request.URL.Query().
 	queryCache url.Values
 
@@ -22,7 +27,9 @@ type Context struct {
 
 	// middleware control
 	handlers []HandlerFunc
-	index    int8
+
+	data  map[string]any
+	index int8
 }
 
 var contextPool = sync.Pool{
@@ -175,10 +182,10 @@ func (c *Context) Write(b []byte) (int, error) {
 }
 
 func (c *Context) reset() {
-	c.Request = nil
-	c.Writer = nil
+	c.Writer = &c.writermem
 	c.Params = c.Params[:0]
 	c.handlers = c.handlers[:0]
+	c.data = make(map[string]any, 8)
 	c.index = -1
 	c.queryCache = nil
 	c.formCache = nil
@@ -247,4 +254,169 @@ func (c *Context) AbortWithStatus(code int) {
 	c.Abort()
 }
 
+// Status sets the HTTP response code.
+func (c *Context) Status(code int) {
+	c.Writer.WriteHeader(code)
+}
+
+// Header is an intelligent shortcut for c.Writer.Header().Set(key, value).
+// It writes a header in the response.
+// If value == "", this method removes the header `c.Writer.Header().Del(key)`
+func (c *Context) Header(key, value string) {
+	if value == "" {
+		c.Writer.Header().Del(key)
+		return
+	}
+	c.Writer.Header().Set(key, value)
+}
+
+// GetHeader returns value from request headers.
+func (c *Context) GetHeader(key string) string {
+	return c.requestHeader(key)
+}
+
+func (c *Context) requestHeader(key string) string {
+	return c.Request.Header.Get(key)
+}
+func (c *Context) JSON(data any) error {
+	c.Writer.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(c).Encode(data)
+}
+
+func (c *Context) AbortWithError(code int, err error) {
+	c.AbortWithStatus(code)
+	c.Writer.Write([]byte(err.Error()))
+}
+
+func (c *Context) Set(key string, value any) {
+	c.data[key] = value
+}
+
+func (c *Context) Render(view string) error {
+	c.data["_ViEW_"] = view
+
+	if c.GetHeader("X-Pjax") == "true" {
+		return c.JSON(c.data)
+	}
+	_, err := executeFunc(s2b(c.engine.rootHTML), c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
+		switch tag {
+		case "view":
+			return w.Write(s2b(view))
+		case "data-page":
+			pageJSON, _ := json.Marshal(c.data)
+			return htmlEscape(w, pageJSON)
+		default:
+		}
+		return 0, nil
+	})
+
+	return err
+}
+
 const abortIndex int8 = 63
+
+func b2s(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+func s2b(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
+type TagFunc func(w io.Writer, tag string) (int, error)
+
+// Use Template.ExecuteFunc for frozen templates.
+func executeFunc(template []byte, startTag, endTag string, w io.Writer, f TagFunc) (int64, error) {
+	s := template
+	a := s2b(startTag)
+	b := s2b(endTag)
+
+	var nn int64
+	var ni int
+	var err error
+	for {
+		n := bytes.Index(s, a)
+		if n < 0 {
+			break
+		}
+		ni, err = w.Write(s[:n])
+		nn += int64(ni)
+		if err != nil {
+			return nn, err
+		}
+
+		s = s[n+len(a):]
+		n = bytes.Index(s, b)
+		if n < 0 {
+			// cannot find end tag - just write it to the output.
+			ni, _ = w.Write(a)
+			nn += int64(ni)
+			break
+		}
+
+		ni, err = f(w, b2s(s[:n]))
+		nn += int64(ni)
+		if err != nil {
+			return nn, err
+		}
+		s = s[n+len(b):]
+	}
+	ni, err = w.Write(s)
+	nn += int64(ni)
+
+	return nn, err
+}
+
+// HTML escaping.
+
+var (
+	htmlQuot = []byte("&#34;") // shorter than "&quot;"
+	htmlApos = []byte("&#39;") // shorter than "&apos;" and apos was not in HTML until HTML5
+	htmlAmp  = []byte("&amp;")
+	htmlLt   = []byte("&lt;")
+	htmlGt   = []byte("&gt;")
+	htmlNull = []byte("\uFFFD")
+)
+
+// HTMLEscape writes to w the escaped HTML equivalent of the plain text data b.
+func htmlEscape(w io.Writer, b []byte) (int, error) {
+	last := 0
+	n := 0
+	var err error
+	for i, c := range b {
+		var html []byte
+		switch c {
+		case '\000':
+			html = htmlNull
+		case '"':
+			html = htmlQuot
+		case '\'':
+			html = htmlApos
+		case '&':
+			html = htmlAmp
+		case '<':
+			html = htmlLt
+		case '>':
+			html = htmlGt
+		default:
+			continue
+		}
+		wn, err := w.Write(b[last:i])
+		if err != nil {
+			return n, err
+		}
+		n += wn
+		wn, err = w.Write(html)
+		if err != nil {
+			return n, err
+		}
+		n += wn
+		last = i + 1
+	}
+	wn, err := w.Write(b[last:])
+	if err != nil {
+		return n, err
+	}
+	n += wn
+	return n, nil
+}

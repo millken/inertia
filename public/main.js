@@ -1,0 +1,1 @@
+import{h as a,l as t,c as p}from"./chunks/viewLoader-C5UKRTPh.js";import"./chunks/runtime-core.esm-bundler-CtMo3Klq.js";var r=document.getElementById("app")||document.body,{_ViEW_:e=void 0,...i}=JSON.parse(r?.dataset.page||"{}");e||(e="App");a(e)?t(e).then(o=>{p(o,i).mount(r)}).catch(o=>{console.error(`Error loading view ${e}`,o)}):console.error(`View ${e} not found`);

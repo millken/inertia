@@ -196,6 +196,9 @@ func (node *treeNode[T]) append(path string, data T) {
 			case wildcard:
 				child.data = data
 				node.wildcard = child
+
+				// Wildcard must always be the last node.
+				// There's nothing more to add.
 				return
 			}
 		}

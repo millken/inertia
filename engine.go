@@ -1,10 +1,27 @@
 package inertia
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 
 	"github.com/millken/inertia/pkg/router"
+)
+
+var (
+	defaultRootHTML = `<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>inertia</title>
+</head>
+
+<body>
+  <div id="app" data-page="<%data-page%>"></div>
+  <script defer type="module" src="/main.js"></script>
+</body>`
 )
 
 type HandlerFunc func(c *Context)
@@ -19,10 +36,21 @@ func WithErrorHandler(status int, errorHandlerFn errorHandlerFn) Option {
 	}
 }
 
+func WithRootHTML(html string) Option {
+	return func(e *Engine) error {
+		e.rootHTML = html
+		return nil
+	}
+}
+
+// Engine is the main Inertia instance that holds the router and middleware.
+
 type Engine struct {
 	DevMode            bool
 	MaxMultipartMemory int64
-	rootTemplateHTML   string
+	rootHTML           string
+	startTag, endTag   string
+	viewFS             fs.FS
 	addr               string
 	router             *router.Router[HandlerFunc]
 	middleware         []HandlerFunc
@@ -31,6 +59,9 @@ type Engine struct {
 func New(options ...Option) (*Engine, error) {
 	e := &Engine{
 		addr:               ":5000",
+		rootHTML:           defaultRootHTML,
+		startTag:           "<%",
+		endTag:             "%>",
 		MaxMultipartMemory: 32 << 20, // 32 MB
 		router:             router.New[HandlerFunc](),
 	}
@@ -45,7 +76,7 @@ func New(options ...Option) (*Engine, error) {
 // WithRootTemplateHTML sets the root template HTML for Inertia.
 func WithRootTemplateHTML(html string) Option {
 	return func(e *Engine) error {
-		e.rootTemplateHTML = html
+		e.rootHTML = html
 		return nil
 	}
 }
@@ -53,9 +84,6 @@ func WithRootTemplateHTML(html string) Option {
 func (e *Engine) Get(path string, fn func(c *Context)) {
 
 	e.router.Add("GET", path, fn)
-}
-func (e *Engine) Render() {
-
 }
 
 func (e *Engine) Addr() string {
@@ -80,9 +108,14 @@ func (e *Engine) Use(middleware ...HandlerFunc) {
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	found, fn, params := e.router.Lookup(r.Method, r.URL.Path)
 	if found {
+		if fn == nil {
+			ErrorHandlerMap[http.StatusInternalServerError](w, r, fmt.Errorf("handler is nil for %s %s", r.Method, r.URL.Path))
+			return
+		}
 		ctx := acquireContext()
+		ctx.writermem.reset(w)
+		ctx.reset()
 		ctx.Request = r
-		ctx.Writer = w
 		ctx.Params = params
 		ctx.engine = e
 

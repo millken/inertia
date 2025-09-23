@@ -1,32 +1,37 @@
 package router
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+type Fn func(int)
 
 func TestRoute(t *testing.T) {
-	r := New[int]()
+	r := New[Fn]()
+	testFn := func(i int) { fmt.Println(i) }
 	tests := []struct {
 		method  string
 		pattern string
-		handler int
+		handler Fn
 		path    string
 		found   bool
 		params  []Parameter
 	}{
-		{"GET", "/", 0, "/", true, nil},
-		{"GET", "/panic", 1, "/panic", true, nil},
-		{"GET", "/assets/*", 2, "/assets/3", true, []Parameter{{Key: "", Value: "3"}}},
-		{"GET", "/user/:id", 3, "/user/123", true, []Parameter{{Key: "id", Value: "123"}}},
+		{"GET", "/", testFn, "/", true, nil},
+		{"GET", "/*", testFn, "/", true, nil},
+		{"GET", "/panic", testFn, "/panic", true, nil},
+		{"GET", "/assets/*", testFn, "/assets/3", true, []Parameter{{Key: "", Value: "3"}}},
+		{"GET", "/user/:id", testFn, "/user/123", true, []Parameter{{Key: "id", Value: "123"}}},
 	}
-	for _, test := range tests {
+	for i, test := range tests {
 		r.Add(test.method, test.pattern, test.handler)
 		found, handler, params := r.Lookup(test.method, test.path)
 		if found != test.found {
 			t.Fatalf("expected found %v, got %v for path %s", test.found, found, test.path)
 		}
 		if found {
-			if handler != test.handler {
-				t.Fatalf("expected handler %d, got %d for path %s", test.handler, handler, test.path)
-			}
+			handler(i)
 			if len(params) != len(test.params) {
 				t.Fatalf("expected %d params, got %d for path %s", len(test.params), len(params), test.path)
 			}
@@ -39,6 +44,33 @@ func TestRoute(t *testing.T) {
 	}
 }
 
+func TestRoute2(t *testing.T) {
+	r := New[int]()
+	tests := []struct {
+		method  string
+		pattern string
+		handler int
+		path    string
+		found   bool
+		params  []Parameter
+	}{
+		{"GET", "/", 11, "/", true, nil},
+		{"GET", "/*", 22, "/", true, nil},
+	}
+	for _, test := range tests {
+		r.Add(test.method, test.pattern, test.handler)
+		found, v, params := r.Lookup(test.method, test.path)
+		if found != test.found {
+			t.Fatalf("expected found %v, got %v for path %s", test.found, found, test.path)
+		}
+		if v != test.handler {
+			t.Fatalf("expected handler %d, got %d for path %s", test.handler, v, test.path)
+		}
+		if len(params) != len(test.params) {
+			t.Fatalf("expected %d params, got %d for path %s", len(test.params), len(params), test.path)
+		}
+	}
+}
 func TestParameterRoute(t *testing.T) {
 	r := New[int]()
 	r.Add("GET", "/user/:id", 2)
