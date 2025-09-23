@@ -298,7 +298,25 @@ func (c *Context) Render(view string) error {
 	if c.GetHeader("X-Pjax") == "true" {
 		return c.JSON(c.data)
 	}
-	_, err := executeFunc(s2b(c.engine.rootHTML), c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
+
+	// 在开发模式下，优先尝试从 DevHost 获取 root HTML，获取失败则回退到本地模板
+	var tpl []byte
+	if c.engine.DevMode() {
+		body, err := http.Get(c.engine.devAddr)
+		if err == nil && body.StatusCode == http.StatusOK {
+			defer body.Body.Close()
+			tpl, err = io.ReadAll(body.Body)
+			if err != nil {
+				tpl = s2b(c.engine.rootHTML)
+			}
+		} else {
+			tpl = s2b(c.engine.rootHTML)
+		}
+	} else {
+		tpl = s2b(c.engine.rootHTML)
+	}
+
+	_, err := executeFunc(tpl, c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
 		switch tag {
 		case "view":
 			return w.Write(s2b(view))

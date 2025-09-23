@@ -1,4 +1,3 @@
-// Shared view loader with caching
 export const modules = import.meta.glob('./**/*.vue')
 
 const cache = new Map()

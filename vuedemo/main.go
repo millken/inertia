@@ -21,6 +21,7 @@ func main() {
 			slog.Error(err.Error())
 			http.Error(w, "Custom 500 Internal Server Error: "+err.Error(), http.StatusInternalServerError)
 		}),
+		inertia.WithDevMode(true),
 	}
 	// Create Inertia instance
 	iner, _ := inertia.New(opts...)

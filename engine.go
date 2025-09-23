@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"github.com/millken/inertia/pkg/router"
@@ -44,9 +46,9 @@ func WithRootHTML(html string) Option {
 	}
 }
 
-func EnableDev() Option {
+func WithDevMode(mode bool) Option {
 	return func(e *Engine) error {
-		e.devMode = true
+		e.devMode = mode
 		return nil
 	}
 }
@@ -68,20 +70,16 @@ type Engine struct {
 	startTag, endTag   string
 	viewFS             fs.FS
 	addr               string
-	httpClient         *http.Client
 	router             *router.Router[HandlerFunc]
 	middleware         []HandlerFunc
 }
 
 func New(options ...Option) (*Engine, error) {
 	e := &Engine{
-		devMode:  os.Getenv("INERTIA_DEV") == "true",
-		devAddr:  "http://localhost:5173",
-		addr:     ":5000",
-		rootHTML: defaultRootHTML,
-		httpClient: &http.Client{
-			Transport: defaultPooledTransport(),
-		},
+		devMode:            os.Getenv("INERTIA_DEV") == "true",
+		devAddr:            "http://localhost:5173",
+		addr:               ":5000",
+		rootHTML:           defaultRootHTML,
 		startTag:           "<%",
 		endTag:             "%>",
 		MaxMultipartMemory: 32 << 20, // 32 MB
@@ -103,6 +101,10 @@ func WithRootTemplateHTML(html string) Option {
 	}
 }
 
+func (e *Engine) DevMode() bool {
+	return e.devMode
+}
+
 func (e *Engine) Get(path string, fn func(c *Context)) {
 
 	e.router.Add("GET", path, fn)
@@ -118,6 +120,10 @@ func (e *Engine) handleHttpRequest(c *Context) {
 
 // ServeAsset serves static assets from the given path
 func (e *Engine) ServeAsset(path string, fs fs.FS) {
+	if e.DevMode() {
+		// in dev mode, we do not serve static assets, they are served by the dev server
+		return
+	}
 	e.Get(path+"*", FileServer(path, fs))
 }
 
@@ -153,9 +159,38 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		releaseContext(ctx)
 		return
 	}
+	// 如果是 devMode，未命中路由的请求都转发到开发服务器
+	if e.devMode {
+		e.proxyToDev(w, r)
+		return
+	}
+	// not found
 	defaultCatchAllHandler.ServeHTTP(w, r)
 }
 
 func (e *Engine) Serve() error {
 	return http.ListenAndServe(e.Addr(), e)
+}
+
+// proxyToDev uses ReverseProxy to forward the request (including websocket upgrades) to dev server
+func (e *Engine) proxyToDev(w http.ResponseWriter, r *http.Request) {
+	target, err := url.Parse(e.devAddr)
+	if err != nil {
+		ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	// preserve original host header
+	origDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDirector(req)
+		// keep the original request URL path and query
+		req.URL.Path = r.URL.Path
+		req.URL.RawQuery = r.URL.RawQuery
+		req.Host = target.Host
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
+		ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
+	}
+	proxy.ServeHTTP(w, r)
 }
