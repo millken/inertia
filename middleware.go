@@ -46,8 +46,6 @@ func FileServer(prefix string, root fs.FS) HandlerFunc {
 				h(w, r, err)
 				return
 			}
-			// Default small message for clients, log full error to server stdout
-			fmt.Printf("error serving %s: %v\n", path, err)
 			if status == http.StatusInternalServerError {
 				http.Error(w, http.StatusText(status)+": internal server error", status)
 			} else {
