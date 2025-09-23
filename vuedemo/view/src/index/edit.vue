@@ -1,6 +1,6 @@
 <template>
   <div>
-    <h1>Edit Post</h1>
+    <h1>Edit Post Page</h1>
 
     <form method="post" :action="`/post/${props.post.id || 0}/edit`">
       <input type="hidden" name="_method" value="patch" />

@@ -9,10 +9,16 @@ import { pjaxClick } from './pjax.action.js'
 
 export default {
   name: 'Link',
+  inheritAttrs: false,
   props: {
     tag: {
       type: String,
       default: 'a'
+    }
+  },
+  computed: {
+    rest() {
+      return { ...this.$attrs, ...this.$props, tag: undefined }
     }
   },
   mounted() {

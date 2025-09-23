@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/millken/inertia/pkg/router"
+	"github.com/millken/inertia/router"
 )
 
 var (

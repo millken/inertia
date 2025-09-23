@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"os"
 
+	"vuedemo/controller"
+
 	"github.com/millken/inertia"
-	"github.com/millken/inertia/controller"
 	middleware "github.com/millken/inertia/middlware"
 )
 
@@ -33,7 +34,7 @@ func main() {
 	iner.Get("/panic", controller.Panic)
 
 	// Add static asset routes last (wildcard routes should be last)
-	iner.ServeAsset("/", os.DirFS("/workspace/Codes/github.com/millken/inertia/public"))
+	iner.ServeAsset("/", os.DirFS("./view/dist"))
 	// Add middleware first
 	iner.Use(middleware.Gzip(),
 		middleware.AccessLog(), middleware.Recovery())

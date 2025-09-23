@@ -1,1 +1,0 @@
-import{r as s,o as a,p as o,t as r,q as l}from"./runtime-core.esm-bundler-CtMo3Klq.js";const c={id:"app"},_={__name:"App",setup(p){const t=s(0),n=()=>{t.value++};return(i,e)=>(l(),a("main",c,[e[0]||(e[0]=o("h1",{class:"title"},"Hello, World!",-1)),o("button",{onClick:n},"Count: "+r(t.value),1)]))}};export{_ as default};

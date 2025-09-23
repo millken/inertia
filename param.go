@@ -1,7 +1,7 @@
 package inertia
 
 import (
-	"github.com/millken/inertia/pkg/router"
+	"github.com/millken/inertia/router"
 )
 
 type Params []router.Parameter
