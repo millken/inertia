@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 
 	"github.com/millken/inertia/pkg/router"
 )
@@ -43,23 +44,44 @@ func WithRootHTML(html string) Option {
 	}
 }
 
+func EnableDev() Option {
+	return func(e *Engine) error {
+		e.devMode = true
+		return nil
+	}
+}
+
+func WithDevAddr(addr string) Option {
+	return func(e *Engine) error {
+		e.devAddr = addr
+		return nil
+	}
+}
+
 // Engine is the main Inertia instance that holds the router and middleware.
 
 type Engine struct {
-	DevMode            bool
+	devMode            bool
+	devAddr            string
 	MaxMultipartMemory int64
 	rootHTML           string
 	startTag, endTag   string
 	viewFS             fs.FS
 	addr               string
+	httpClient         *http.Client
 	router             *router.Router[HandlerFunc]
 	middleware         []HandlerFunc
 }
 
 func New(options ...Option) (*Engine, error) {
 	e := &Engine{
-		addr:               ":5000",
-		rootHTML:           defaultRootHTML,
+		devMode:  os.Getenv("INERTIA_DEV") == "true",
+		devAddr:  "http://localhost:5173",
+		addr:     ":5000",
+		rootHTML: defaultRootHTML,
+		httpClient: &http.Client{
+			Transport: defaultPooledTransport(),
+		},
 		startTag:           "<%",
 		endTag:             "%>",
 		MaxMultipartMemory: 32 << 20, // 32 MB

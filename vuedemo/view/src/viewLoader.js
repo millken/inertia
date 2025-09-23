@@ -20,16 +20,3 @@ export async function loadView(name) {
   cache.set(path, component)
   return component
 }
-
-export function clearCache(name) {
-  if (name) {
-    const path = `./${name}.vue`
-    cache.delete(path)
-    return
-  }
-  cache.clear()
-}
-
-export async function preloadView(name) {
-  return await loadView(name)
-}

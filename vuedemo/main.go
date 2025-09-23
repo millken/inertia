@@ -22,24 +22,22 @@ func main() {
 			http.Error(w, "Custom 500 Internal Server Error: "+err.Error(), http.StatusInternalServerError)
 		}),
 	}
-	// opts = append(opts, inertia.WithRootTemplateHTML("<!DOCTYPE html><html><head><title>Inertia App</title></head><body>{{.PageHTML}}</body></html>"))
 	// Create Inertia instance
-	i, _ := inertia.New(opts...)
-	i.DevMode = true
+	iner, _ := inertia.New(opts...)
 
 	// Add specific routes first
-	i.Get("/", controller.Index)
-	i.Get("/post/:id", controller.ShowPost)
-	i.Get("/post/:id/edit", controller.EditPost)
-	i.Get("/panic", controller.Panic)
+	iner.Get("/", controller.Index)
+	iner.Get("/post/:id", controller.ShowPost)
+	iner.Get("/post/:id/edit", controller.EditPost)
+	iner.Get("/panic", controller.Panic)
 
 	// Add static asset routes last (wildcard routes should be last)
-	i.ServeAsset("/", os.DirFS("/workspace/Codes/github.com/millken/inertia/public"))
+	iner.ServeAsset("/", os.DirFS("/workspace/Codes/github.com/millken/inertia/public"))
 	// Add middleware first
-	i.Use(middleware.Gzip(),
+	iner.Use(middleware.Gzip(),
 		middleware.AccessLog(), middleware.Recovery())
-	slog.Info(fmt.Sprintf("> Starting at http://%s", i.Addr()))
-	err := i.Serve()
+	slog.Info(fmt.Sprintf("> Starting at http://%s", iner.Addr()))
+	err := iner.Serve()
 	if err != nil {
 		slog.Error(fmt.Sprintf("Server terminated: %v", err.Error()))
 	}

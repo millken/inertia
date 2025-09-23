@@ -1,19 +1,37 @@
 import { createApp } from 'vue'
-import { modules, hasView, loadView } from './viewLoader.js'
+import {  hasView, loadView } from './viewLoader.js'
 
-var el = document.getElementById("app") || document.body;
-var { _ViEW_ = void 0, ...props } = JSON.parse(el?.dataset.page || "{}");
-if (!_ViEW_) {
-  _ViEW_ = "App"; // Default view
-}
+if (typeof document !== 'undefined') {
+	(async function init() {
+		const el = document.getElementById('app') ?? document.body;
 
-if (hasView(_ViEW_)) {
-  loadView(_ViEW_).then((component) => {
-    createApp(component, props).mount(el);
-  }).catch((error) => {
-    console.error(`Error loading view ${_ViEW_}`, error);
-  });
-} else {
-  console.error(`View ${_ViEW_} not found`);
+		const raw = el?.dataset?.page ?? '{}';
+		let page = {};
+		if (raw && raw !== '<%data-page%>') {
+			try {
+				page = JSON.parse(raw) || {};
+			} catch (e) {
+				console.error('Failed to parse page JSON:', e);
+				page = {};
+			}
+		}
+
+		const { _ViEW_: _ViEW_, ...props } = page;
+		const viewName = _ViEW_ ?? 'App';
+
+		if (hasView(viewName)) {
+			try {
+				const mod = await loadView(viewName);
+				const component = mod?.default ?? mod;
+				if (!component) throw new Error('Loaded view has no component');
+
+				createApp(component, props).mount(el);
+			} catch (error) {
+				console.error(`Error loading view ${viewName}`, error);
+			}
+		} else {
+			console.error(`View ${viewName} not found`);
+		}
+	})();
 }
 
