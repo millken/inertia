@@ -12,10 +12,10 @@ func Error(w http.ResponseWriter, err error, HTTPStatus int) {
 	http.Error(w, err.Error(), HTTPStatus)
 }
 
-type errorHandlerFn func(w http.ResponseWriter, r *http.Request, err error)
+type ErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
 
 var (
-	ErrorHandlerMap = map[int]errorHandlerFn{
+	ErrorHandlerMap = map[int]ErrorHandlerFunc{
 		http.StatusNotFound: func(w http.ResponseWriter, r *http.Request, err error) {
 			http.NotFound(w, r)
 		},

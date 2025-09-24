@@ -30,7 +30,7 @@ type HandlerFunc func(c *Context)
 // Option is an option parameter that modifies Inertia.
 type Option func(e *Engine) error
 
-func WithErrorHandler(status int, errorHandlerFn errorHandlerFn) Option {
+func WithErrorHandler(status int, errorHandlerFn ErrorHandlerFunc) Option {
 	return func(e *Engine) error {
 		ErrorHandlerMap[status] = errorHandlerFn
 		return nil
@@ -99,14 +99,6 @@ func New(options ...Option) (*Engine, error) {
 	return e, nil
 }
 
-// WithRootTemplateHTML sets the root template HTML for Inertia.
-func WithRootTemplateHTML(html string) Option {
-	return func(e *Engine) error {
-		e.rootHTML = html
-		return nil
-	}
-}
-
 func (e *Engine) DevMode() bool {
 	return e.devMode
 }
@@ -149,6 +141,10 @@ func (e *Engine) Addr() string {
 	return e.addr
 }
 
+func (e *Engine) DevAddr() string {
+	return e.devAddr
+}
+
 // StaticFS serves static assets from the given path
 func (e *Engine) StaticFS(path string, fs fs.FS) {
 	if e.DevMode() {
@@ -182,7 +178,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx.handlers = ctx.handlers[:0] // reset slice but keep capacity
 		ctx.handlers = append(ctx.handlers, e.middleware...)
 		ctx.handlers = append(ctx.handlers, fn)
-		ctx.index = -1
 
 		// Start execution chain
 		ctx.Next()
