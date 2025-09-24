@@ -2,6 +2,7 @@ package inertia
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 type Context struct {
 	writermem responseWriter
+	Meta      Meta
 	Request   *http.Request
 	Writer    ResponseWriter
 	Params    Params
@@ -279,7 +281,28 @@ func (c *Context) requestHeader(key string) string {
 	return c.Request.Header.Get(key)
 }
 func (c *Context) JSON(data any) error {
-	c.Writer.Header().Set("Content-Type", "application/json")
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// Security headers
+	// Prevents the browser from MIME-sniffing a response away from the declared content-type
+	c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
+	// Completely disable all forms of caching including back/forward cache
+	c.Writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
+	c.Writer.Header().Set("Pragma", "no-cache")
+	c.Writer.Header().Set("Expires", "0")
+	// Prevents some XSS attacks
+	// Note: This header is deprecated and it's recommended to use Content-Security-Policy instead
+	// However, some older browsers might still rely on it
+	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
+	// Here we disable it to avoid conflicts with modern XSS protection mechanisms
+	// that are implemented via Content-Security-Policy headers
+	c.Writer.Header().Set("X-Xss-Protection", "0")
+	c.Writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self';")
+	// Prevents the page from being displayed in an iframe to avoid clickjacking attacks
+	// Use "SAMEORIGIN" to allow iframes from the same origin
+	// or "ALLOW-FROM uri" to allow from a specific origin
+	// Here we use "DENY" to completely prevent framing
+	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
+	c.Writer.Header().Set("X-Frame-Options", "sameorigin")
 	return json.NewEncoder(c).Encode(data)
 }
 
@@ -290,6 +313,37 @@ func (c *Context) AbortWithError(code int, err error) {
 
 func (c *Context) Set(key string, value any) {
 	c.data[key] = value
+}
+
+func (c *Context) SetMeta(meta Meta) {
+	c.Meta = meta
+}
+
+func (c *Context) ClientIP() string {
+	// Check X-Forwarded-For header first
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can contain multiple IPs, the first one is the client IP
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// Check X-Real-IP header
+	if xrip := c.GetHeader("X-Real-IP"); xrip != "" {
+		return strings.TrimSpace(xrip)
+	}
+
+	// Fallback to RemoteAddr
+	if ip := c.Request.RemoteAddr; ip != "" {
+		// RemoteAddr can be in the form "IP:port", we need to extract the IP part
+		if colonPos := strings.LastIndex(ip, ":"); colonPos != -1 {
+			return ip[:colonPos]
+		}
+		return ip
+	}
+
+	return ""
 }
 
 func (c *Context) Render(view string) error {
@@ -318,11 +372,15 @@ func (c *Context) Render(view string) error {
 
 	_, err := executeFunc(tpl, c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
 		switch tag {
+		case "head-meta":
+			return w.Write(s2b(c.Meta.ToHTML()))
 		case "view":
 			return w.Write(s2b(view))
 		case "data-page":
 			pageJSON, _ := json.Marshal(c.data)
 			return htmlEscape(w, pageJSON)
+		case "version":
+			return w.Write(s2b(cmp.Or(c.Meta.Version, "0.0.0")))
 		default:
 		}
 		return 0, nil

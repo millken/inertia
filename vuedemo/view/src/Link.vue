@@ -5,7 +5,7 @@
 </template>
 
 <script>
-import { pjaxClick } from './pjax.action.js'
+import { pjaxClick } from './pjaxLoader.js'
 
 export default {
   name: 'Link',

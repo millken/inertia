@@ -30,6 +30,7 @@ func ShowPost(c *inertia.Context) {
 	id := c.Params.Get("id")
 	idInt, _ := strconv.Atoi(id)
 	post := Post{ID: idInt, Name: "Post " + id, Body: "This is the body of post " + id}
+	c.Meta.SetTitle(post.Name).SetDescription(post.Body).SetKeywords("post,example,blog").SetAuthor("Admin")
 	c.Set("post", post)
 	if err := c.Render("index/show"); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)

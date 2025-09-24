@@ -21,8 +21,8 @@ type fileServer struct {
 	etags   map[string]string
 }
 
-// FileServer returns an inertia.HandlerFunc that serves files from the given fs.FS.
-func FileServer(prefix string, root fs.FS) HandlerFunc {
+// StaticFileServer returns an inertia.HandlerFunc that serves files from the given fs.FS.
+func StaticFileServer(prefix string, root fs.FS) HandlerFunc {
 	_, ok := root.(embed.FS)
 	srv := &fileServer{
 		prefix:  prefix,
@@ -36,23 +36,8 @@ func FileServer(prefix string, root fs.FS) HandlerFunc {
 		w := c.Writer
 
 		path := strings.TrimPrefix(r.URL.Path, prefix)
-		if path == "" || path[len(path)-1] == '/' {
+		if path == "" || strings.HasSuffix(path, "/") {
 			path = path + "index.html"
-		}
-
-		// friendly error handler helper
-		handleError := func(status int, err error) {
-			if h, ok := ErrorHandlerMap[status]; ok {
-				h(w, r, err)
-				return
-			}
-			// Default small message for clients, log full error to server stdout
-			fmt.Printf("error serving %s: %v\n", path, err)
-			if status == http.StatusInternalServerError {
-				http.Error(w, http.StatusText(status)+": internal server error", status)
-			} else {
-				http.Error(w, http.StatusText(status), status)
-			}
 		}
 
 		if srv.isEmbed {
@@ -69,14 +54,14 @@ func FileServer(prefix string, root fs.FS) HandlerFunc {
 		fi, err := srv.root.Open(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				handleError(http.StatusNotFound, err)
+				ErrorHandlerMap[http.StatusNotFound](w, r, err)
 				return
 			}
 			if os.IsPermission(err) {
-				handleError(http.StatusForbidden, err)
+				ErrorHandlerMap[http.StatusForbidden](w, r, err)
 				return
 			}
-			handleError(http.StatusInternalServerError, err)
+			ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
 			return
 		}
 		defer fi.Close()
@@ -84,38 +69,54 @@ func FileServer(prefix string, root fs.FS) HandlerFunc {
 		f, err := fi.Stat()
 		if err != nil {
 			if os.IsNotExist(err) {
-				handleError(http.StatusNotFound, err)
+				ErrorHandlerMap[http.StatusNotFound](w, r, err)
 				return
 			}
 			if os.IsPermission(err) {
-				handleError(http.StatusForbidden, err)
+				ErrorHandlerMap[http.StatusForbidden](w, r, err)
 				return
 			}
-			handleError(http.StatusInternalServerError, err)
+			ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
 			return
-		}
-
-		content, err := io.ReadAll(fi)
-		if err != nil {
-			handleError(http.StatusInternalServerError, err)
-			return
-		}
-
-		h := fnv.New64a()
-		h.Write(content)
-		etag := fmt.Sprintf("W/%x", h.Sum64())
-		if srv.isEmbed {
-			srv.mu.Lock()
-			srv.etags[path] = etag
-			srv.mu.Unlock()
-		} else {
-			w.Header().Set("Last-Modified", f.ModTime().UTC().Format(http.TimeFormat))
 		}
 
 		w.Header().Set("Vary", "Accept-Encoding")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
-		w.Header().Set("Etag", etag)
+		if srv.isEmbed {
+			content, err := io.ReadAll(fi)
+			if err != nil {
+				ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
+				return
+			}
+			h := fnv.New64a()
+			h.Write(content)
+			etag := fmt.Sprintf("W/%x", h.Sum64())
 
-		http.ServeContent(w, r, f.Name(), f.ModTime(), bytes.NewReader(content))
+			srv.mu.Lock()
+			srv.etags[path] = etag
+			srv.mu.Unlock()
+
+			ifNoneMatch := r.Header.Get("If-None-Match")
+			if ifNoneMatch != "" && ifNoneMatch == etag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+
+			w.Header().Set("Etag", etag)
+			http.ServeContent(w, r, f.Name(), f.ModTime(), bytes.NewReader(content))
+		} else {
+			// 普通FS直接用文件句柄，避免读入内存（如果支持 Seek）；否则退回到内存读取
+			w.Header().Set("Last-Modified", f.ModTime().UTC().Format(http.TimeFormat))
+			if rs, ok := fi.(io.ReadSeeker); ok {
+				http.ServeContent(w, r, f.Name(), f.ModTime(), rs)
+			} else {
+				content, err := io.ReadAll(fi)
+				if err != nil {
+					ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
+					return
+				}
+				http.ServeContent(w, r, f.Name(), f.ModTime(), bytes.NewReader(content))
+			}
+		}
 	}
 }

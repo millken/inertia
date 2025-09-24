@@ -1,12 +1,23 @@
 package router
 
+import (
+	"errors"
+	"strings"
+)
+
+const Methods = "GET|POST|DELETE|PUT|PATCH|OPTIONS|HEAD"
+
+var ErrMethodNotAllowed = errors.New("method not allowed")
+
 // Router is a high-performance router.
 type Router[T any] struct {
-	get    Tree[T]
-	post   Tree[T]
-	delete Tree[T]
-	put    Tree[T]
-	patch  Tree[T]
+	get     Tree[T]
+	post    Tree[T]
+	delete  Tree[T]
+	put     Tree[T]
+	patch   Tree[T]
+	options Tree[T]
+	head    Tree[T]
 }
 
 // New creates a new router containing trees for every HTTP method.
@@ -15,13 +26,21 @@ func New[T any]() *Router[T] {
 }
 
 // Add registers a new handler for the given method and path.
-func (router *Router[T]) Add(method string, path string, handler T) {
+func (router *Router[T]) Add(method string, path string, handler T) error {
+	if !strings.Contains(Methods, method) {
+		return ErrMethodNotAllowed
+	}
 	tree := router.selectTree(method)
 	tree.Add(path, handler)
+	return nil
 }
 
 // Lookup finds the handler and parameters for the given route.
 func (router *Router[T]) Lookup(method string, path string) (bool, T, []Parameter) {
+	if method == "" || path == "" || !strings.Contains(Methods, method) {
+		var empty T
+		return false, empty, nil
+	}
 	if method[0] == 'G' {
 		return router.get.Lookup(path)
 	}
@@ -32,6 +51,10 @@ func (router *Router[T]) Lookup(method string, path string) (bool, T, []Paramete
 
 // LookupNoAlloc finds the handler and parameters for the given route without using any memory allocations.
 func (router *Router[T]) LookupNoAlloc(method string, path string, addParameter func(string, string)) (bool, T) {
+	var empty T
+	if method == "" || path == "" || !strings.Contains(Methods, method) {
+		return false, empty
+	}
 	if method[0] == 'G' {
 		return router.get.LookupNoAlloc(path, addParameter)
 	}
@@ -47,6 +70,8 @@ func (router *Router[T]) Map(transform func(T) T) {
 	router.delete.Map(transform)
 	router.put.Map(transform)
 	router.patch.Map(transform)
+	router.options.Map(transform)
+	router.head.Map(transform)
 }
 
 // selectTree returns the tree by the given HTTP method.
@@ -62,6 +87,10 @@ func (router *Router[T]) selectTree(method string) *Tree[T] {
 		return &router.put
 	case "PATCH":
 		return &router.patch
+	case "OPTIONS":
+		return &router.options
+	case "HEAD":
+		return &router.head
 	default:
 		return nil
 	}
