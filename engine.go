@@ -3,6 +3,7 @@ package inertia
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -57,6 +58,14 @@ func WithDevAddr(addr string) Option {
 	}
 }
 
+func WithTags(startTag, endTag string) Option {
+	return func(e *Engine) error {
+		e.startTag = startTag
+		e.endTag = endTag
+		return nil
+	}
+}
+
 // Engine is the main Inertia instance that holds the router and middleware.
 
 type Engine struct {
@@ -77,7 +86,7 @@ func New(options ...Option) (*Engine, error) {
 		devAddr:            "http://localhost:5173",
 		addr:               ":5000",
 		rootHTML:           defaultRootHTML,
-		startTag:           "<!--inertia-",
+		startTag:           "<!--inertia-", //注释标记可以防止被前端框架（如 Vue、React）误删
 		endTag:             "-inertia-->",
 		MaxMultipartMemory: 32 << 20, // 32 MB
 		router:             router.New[HandlerFunc](),
@@ -102,22 +111,51 @@ func (e *Engine) DevMode() bool {
 	return e.devMode
 }
 
-func (e *Engine) Get(path string, fn func(c *Context)) {
-
+func (e *Engine) GET(path string, fn func(c *Context)) {
 	e.router.Add("GET", path, fn)
+}
+
+func (e *Engine) POST(path string, fn func(c *Context)) {
+	e.router.Add("POST", path, fn)
+}
+
+func (e *Engine) PUT(path string, fn func(c *Context)) {
+	e.router.Add("PUT", path, fn)
+}
+
+func (e *Engine) DELETE(path string, fn func(c *Context)) {
+	e.router.Add("DELETE", path, fn)
+}
+
+func (e *Engine) PATCH(path string, fn func(c *Context)) {
+	e.router.Add("PATCH", path, fn)
+}
+
+func (e *Engine) OPTIONS(path string, fn func(c *Context)) {
+	e.router.Add("OPTIONS", path, fn)
+}
+
+func (e *Engine) HEAD(path string, fn func(c *Context)) {
+	e.router.Add("HEAD", path, fn)
+}
+
+func (e *Engine) ANY(path string, fn func(c *Context)) {
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"} {
+		e.router.Add(method, path, fn)
+	}
 }
 
 func (e *Engine) Addr() string {
 	return e.addr
 }
 
-// ServeAsset serves static assets from the given path
-func (e *Engine) ServeAsset(path string, fs fs.FS) {
+// StaticFS serves static assets from the given path
+func (e *Engine) StaticFS(path string, fs fs.FS) {
 	if e.DevMode() {
 		// in dev mode, we do not serve static assets, they are served by the dev server
 		return
 	}
-	e.Get(path+"*", FileServer(path, fs))
+	e.GET(path+"*", StaticFileServer(path, fs))
 }
 
 // Use allows to specify a middleware that should be executed for all the handlers
@@ -162,6 +200,11 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *Engine) Serve() error {
+	if e.devMode {
+		slog.Info(fmt.Sprintf("Starting in development mode, proxying to dev server at %s", e.devAddr))
+	} else {
+		slog.Info(fmt.Sprintf("Starting in production mode at http://%s", e.Addr()))
+	}
 	return http.ListenAndServe(e.Addr(), e)
 }
 
@@ -169,6 +212,7 @@ func (e *Engine) Serve() error {
 func (e *Engine) proxyToDev(w http.ResponseWriter, r *http.Request) {
 	target, err := url.Parse(e.devAddr)
 	if err != nil {
+		slog.Error("proxyToDev: parse devAddr error", slog.Any("error", err))
 		ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
 		return
 	}
@@ -183,6 +227,7 @@ func (e *Engine) proxyToDev(w http.ResponseWriter, r *http.Request) {
 		req.Host = target.Host
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
+		slog.Error("proxyToDev: proxy error", slog.Any("error", eErr))
 		ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
 	}
 	proxy.ServeHTTP(w, r)

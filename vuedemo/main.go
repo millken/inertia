@@ -29,16 +29,19 @@ func main() {
 	defaultMeta := inertia.NewMeta().SetTitle("My Site").SetDescription("Welcome to my site").SetKeywords("inertia,go,vuejs")
 
 	// Add specific routes first
-	iner.Get("/", controller.Index)
-	iner.Get("/post/:id", controller.ShowPost)
-	iner.Get("/post/:id/edit", controller.EditPost)
-	iner.Get("/panic", controller.Panic)
+	iner.GET("/", controller.Index)
+	iner.GET("/post/:id", controller.ShowPost)
+	iner.GET("/post/:id/edit", controller.EditPost)
+	iner.GET("/panic", controller.Panic)
 
 	// Add static asset routes last (wildcard routes should be last)
-	iner.ServeAsset("/", os.DirFS("./view/dist"))
+	iner.StaticFS("/", os.DirFS("./view/dist"))
 	// Add middleware first
-	iner.Use(middleware.Gzip(),
-		middleware.AccessLog(), middleware.Recovery(), inertia.UseMeta(defaultMeta))
+	fileLog, _ := os.OpenFile("access.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	defer fileLog.Close()
+	iner.Use(middleware.AccessLog(middleware.WithAccessLogOutput(fileLog)))
+	// Add other middleware
+	iner.Use(middleware.Gzip(), middleware.Recovery(), inertia.UseMeta(defaultMeta))
 	slog.Info(fmt.Sprintf("> Starting at http://%s", iner.Addr()))
 	err := iner.Serve()
 	if err != nil {

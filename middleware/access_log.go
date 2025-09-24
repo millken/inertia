@@ -35,12 +35,11 @@ func AccessLog(options ...AccessLogOption) inertia.HandlerFunc {
 	logger := slog.Default()
 	out := opts.Out
 	// if out is os.Stdout or os.Stderr use terminal handler
-	if f, ok := out.(*os.File); ok {
-		if f.Fd() == os.Stdout.Fd() || f.Fd() == os.Stderr.Fd() {
-			// use terminal handler for stdout and stderr
-			logger = slog.New(slog.NewTextHandler(out, nil))
-		}
-	} else if out != nil {
+	if f, ok := out.(*os.File); ok && (f.Fd() == os.Stdout.Fd() || f.Fd() == os.Stderr.Fd()) {
+		// use terminal handler for stdout and stderr
+		logger = slog.New(slog.NewTextHandler(out, nil))
+
+	} else {
 		// use JSON handler if out is provided
 		logger = slog.New(slog.NewJSONHandler(out, nil))
 	}
@@ -66,7 +65,7 @@ func AccessLog(options ...AccessLogOption) inertia.HandlerFunc {
 			}
 			referer := c.Request.Header.Get("Referer")
 			bodySent := c.Writer.Size()
-			logger.Log(c.Request.Context(), logLevel, "", "http_method", c.Request.Method, "status", status, "host", c.Request.Host, "url", fullURL, "remote_addr", c.ClientIP(), "http_user_agent", c.Request.UserAgent(), "http_referer", referer, "body_bytes_sent", bodySent, "took", time.Since(start))
+			logger.Log(c.Request.Context(), logLevel, "", "http_method", c.Request.Method, "status", status, "host", c.Request.Host, "url", fullURL, "remote_addr", c.ClientIP(), "http_user_agent", c.Request.UserAgent(), "http_referer", referer, "body_bytes_sent", bodySent, "took", time.Since(start).String())
 		}()
 
 		c.Next()
