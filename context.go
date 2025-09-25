@@ -303,7 +303,13 @@ func (c *Context) JSON(data any) error {
 	// Here we use "DENY" to completely prevent framing
 	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
 	c.Writer.Header().Set("X-Frame-Options", "sameorigin")
-	return json.NewEncoder(c).Encode(data)
+	// Encode the data to JSON and write to the response
+	jsonContent, err := jsonMarshal(data)
+	if err != nil {
+		return err
+	}
+	_, err = c.Writer.Write(jsonContent)
+	return err
 }
 
 func (c *Context) AbortWithError(code int, err error) {
@@ -495,4 +501,20 @@ func htmlEscape(w io.Writer, b []byte) (int, error) {
 	}
 	n += wn
 	return n, nil
+}
+
+var bufPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
+func jsonMarshal(v any) ([]byte, error) {
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	if err := json.NewEncoder(buf).Encode(v); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
