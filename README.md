@@ -1,5 +1,7 @@
+# inertia
+
+gin + inertia, too fast — too complex; no documentation provided.
 
 
-npx ts-node build.ts
 
-github.com/leapkit/leapkit
+
