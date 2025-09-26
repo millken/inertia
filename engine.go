@@ -1,13 +1,13 @@
 package inertia
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 
 	"github.com/millken/inertia/router"
 )
@@ -20,9 +20,18 @@ var (
 </head>
 
 <body>
-  <div id="app" data-page="<!--inertia-data-page-inertia-->"></div>
+  <div id="app"><!--inertia-ssr-content-inertia--></div>
+  <script>window.__INERTIA_PAGE_DATA__="<!--inertia-data-page-inertia-->";</script>
   <script type="module" src="/main.js?v=<!--inertia-version-inertia-->"></script>
 </body>`
+)
+
+type Mode byte
+
+const (
+	ModeProduction Mode = iota
+	ModeDevelopment
+	ModeSSR
 )
 
 type HandlerFunc func(c *Context)
@@ -44,13 +53,6 @@ func WithRootHTML(html string) Option {
 	}
 }
 
-func WithDevMode(mode bool) Option {
-	return func(e *Engine) error {
-		e.devMode = mode
-		return nil
-	}
-}
-
 func WithDevAddr(addr string) Option {
 	return func(e *Engine) error {
 		e.devAddr = addr
@@ -66,23 +68,45 @@ func WithTags(startTag, endTag string) Option {
 	}
 }
 
+func WithSSR(ssr SSR) Option {
+	return func(e *Engine) error {
+		e.ssr = ssr
+		return nil
+	}
+}
+
+func WithMode(mode Mode) Option {
+	return func(e *Engine) error {
+		e.mode = mode
+		return nil
+	}
+}
+
+type SSR interface {
+	RenderTemplate(ctx context.Context, tpl string, data map[string]any) (string, error)
+	RenderComponent(ctx context.Context, name string, data map[string]any) (string, error)
+	RenderPage(ctx context.Context, url string, data map[string]any) (string, error)
+	Close()
+}
+
 // Engine is the main Inertia instance that holds the router and middleware.
 
 type Engine struct {
-	devMode            bool
+	mode               Mode
 	devAddr            string
 	MaxMultipartMemory int64
 	rootHTML           string
 	startTag, endTag   string
-	viewFS             fs.FS
+	ssr                SSR
 	addr               string
 	router             *router.Router[HandlerFunc]
 	middleware         []HandlerFunc
 }
 
 func New(options ...Option) (*Engine, error) {
+	var err error
 	e := &Engine{
-		devMode:            os.Getenv("INERTIA_DEV") == "true",
+		mode:               ModeProduction,
 		devAddr:            "http://localhost:5173",
 		addr:               ":5000",
 		rootHTML:           defaultRootHTML,
@@ -92,15 +116,21 @@ func New(options ...Option) (*Engine, error) {
 		router:             router.New[HandlerFunc](),
 	}
 	for _, option := range options {
-		if err := option(e); err != nil {
+		if err = option(e); err != nil {
 			return nil, err
 		}
 	}
 	return e, nil
 }
 
-func (e *Engine) DevMode() bool {
-	return e.devMode
+// IsDevelopentMode returns true if the engine is in development mode
+func (e *Engine) IsDevelopentMode() bool {
+	return e.mode == ModeDevelopment
+}
+
+// IsSSRMode returns true if the engine is in SSR mode
+func (e *Engine) IsSSRMode() bool {
+	return e.mode == ModeSSR
 }
 
 func (e *Engine) GET(path string, fn func(c *Context)) {
@@ -147,7 +177,7 @@ func (e *Engine) DevAddr() string {
 
 // StaticFS serves static assets from the given path
 func (e *Engine) StaticFS(path string, fs fs.FS) {
-	if e.DevMode() {
+	if e.IsDevelopentMode() {
 		// in dev mode, we do not serve static assets, they are served by the dev server
 		return
 	}
@@ -186,8 +216,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 如果是 devMode，未命中路由的请求都转发到开发服务器
-	if e.devMode {
-		e.proxyToDev(w, r)
+	if e.IsDevelopentMode() {
+		e.proxyToDevServer(w, r)
 		return
 	}
 	// not found
@@ -195,19 +225,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *Engine) Serve() error {
-	if e.devMode {
-		slog.Info(fmt.Sprintf("Starting in development mode, proxying to dev server at %s", e.devAddr))
+	if e.IsDevelopentMode() {
+		slog.Info(fmt.Sprintf("Starting in development mode, proxying to development server at %s", e.devAddr))
+	} else if e.IsSSRMode() {
+		slog.Info(fmt.Sprintf("Starting in SSR mode at http://%s", e.Addr()))
 	} else {
 		slog.Info(fmt.Sprintf("Starting in production mode at http://%s", e.Addr()))
 	}
 	return http.ListenAndServe(e.Addr(), e)
 }
 
-// proxyToDev uses ReverseProxy to forward the request (including websocket upgrades) to dev server
-func (e *Engine) proxyToDev(w http.ResponseWriter, r *http.Request) {
+// proxyToDevServer uses ReverseProxy to forward the request (including websocket upgrades) to dev server
+func (e *Engine) proxyToDevServer(w http.ResponseWriter, r *http.Request) {
 	target, err := url.Parse(e.devAddr)
 	if err != nil {
-		slog.Error("proxyToDev: parse devAddr error", slog.Any("error", err))
+		slog.Error("proxyToDevServer: parse devAddr error", slog.Any("error", err))
 		ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
 		return
 	}
@@ -222,7 +254,7 @@ func (e *Engine) proxyToDev(w http.ResponseWriter, r *http.Request) {
 		req.Host = target.Host
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
-		slog.Error("proxyToDev: proxy error", slog.Any("error", eErr))
+		slog.Error("proxyToDevServer: proxy error", slog.Any("error", eErr))
 		ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
 	}
 	proxy.ServeHTTP(w, r)

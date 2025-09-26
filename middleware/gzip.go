@@ -49,13 +49,20 @@ func (g *gzipResponseWriter) Flush() {
 
 type GzipOption func(*gzipOptions)
 type gzipOptions struct {
-	Level              int
-	ExcludedExtentions []string
+	Level                  int
+	ExcludedExtentions     []string
+	customShouldCompressFn func(req *http.Request) bool
 }
 
 func WithGzipLevel(level int) GzipOption {
 	return func(opts *gzipOptions) {
 		opts.Level = level
+	}
+}
+
+func WithGzipShouldCompressFn(fn func(req *http.Request) bool) GzipOption {
+	return func(opts *gzipOptions) {
+		opts.customShouldCompressFn = fn
 	}
 }
 
@@ -68,8 +75,9 @@ func WithGzipExcludedExtentions(exts []string) GzipOption {
 func Gzip(options ...GzipOption) inertia.HandlerFunc {
 	// set default options
 	opts := &gzipOptions{
-		Level:              gzip.DefaultCompression,
-		ExcludedExtentions: DefaultExcludedExtentions,
+		Level:                  gzip.DefaultCompression,
+		ExcludedExtentions:     DefaultExcludedExtentions,
+		customShouldCompressFn: func(req *http.Request) bool { return false },
 	}
 	for _, option := range options {
 		option(opts)
@@ -92,7 +100,7 @@ func Gzip(options ...GzipOption) inertia.HandlerFunc {
 
 		// Check if the request path is excluded from compression
 		extension := filepath.Ext(req.URL.Path)
-		return slices.Contains(opts.ExcludedExtentions, extension)
+		return opts.customShouldCompressFn(req) || slices.Contains(opts.ExcludedExtentions, extension)
 	}
 	return func(c *inertia.Context) {
 		if c.Request == nil || !shouldCompress(c.Request) {

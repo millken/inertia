@@ -3,15 +3,28 @@ package inertia
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 )
+
+var _ context.Context = (*Context)(nil)
+
+// ContextKey is the key that a Context returns itself for.
+const ContextKey = "_inertia/contextkey"
+
+type ContextKeyType int
+
+const ContextRequestKey ContextKeyType = 0
 
 type Context struct {
 	writermem responseWriter
@@ -29,9 +42,9 @@ type Context struct {
 
 	// middleware control
 	handlers []HandlerFunc
-
-	data  map[string]any
-	index int8
+	mu       sync.RWMutex
+	data     map[string]any
+	index    int8
 }
 
 var contextPool = sync.Pool{
@@ -304,7 +317,7 @@ func (c *Context) JSON(data any) error {
 	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
 	c.Writer.Header().Set("X-Frame-Options", "sameorigin")
 	// Encode the data to JSON and write to the response
-	jsonContent, err := jsonMarshal(data)
+	jsonContent, err := jsonMarshal(data, false)
 	if err != nil {
 		return err
 	}
@@ -318,7 +331,28 @@ func (c *Context) AbortWithError(code int, err error) {
 }
 
 func (c *Context) Set(key string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.data == nil {
+		c.data = make(map[string]any, 8)
+	}
 	c.data[key] = value
+}
+
+func (c *Context) Get(key string) (value any, exists bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	value, exists = c.data[key]
+	return
+}
+
+func (c *Context) Data() map[string]any {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.data == nil {
+		return map[string]any{}
+	}
+	return maps.Clone(c.data)
 }
 
 func (c *Context) SetMeta(meta Meta) {
@@ -353,7 +387,8 @@ func (c *Context) ClientIP() string {
 }
 
 func (c *Context) Render(view string) error {
-	c.data["_ViEW_"] = view
+	var err error
+	c.Set("_ViEW_", view)
 
 	if c.GetHeader("X-Pjax") == "true" {
 		return c.JSON(c.data)
@@ -361,7 +396,7 @@ func (c *Context) Render(view string) error {
 
 	// 在开发模式下，优先尝试从 DevHost 获取 root HTML，获取失败则回退到本地模板
 	var tpl []byte
-	if c.engine.DevMode() {
+	if c.engine.IsDevelopentMode() {
 		body, err := http.Get(c.engine.devAddr)
 		if err == nil && body.StatusCode == http.StatusOK {
 			defer body.Body.Close()
@@ -376,15 +411,25 @@ func (c *Context) Render(view string) error {
 		tpl = s2b(c.engine.rootHTML)
 	}
 
-	_, err := executeFunc(tpl, c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
+	var ssrContent string
+	if c.engine.IsSSRMode() && c.engine.ssr != nil {
+		ssrContent, err = c.engine.ssr.RenderPage(c, view, c.data)
+		if err != nil {
+			slog.Error("SSR render error", slog.Any("error", err))
+		}
+	}
+
+	_, err = executeFunc(tpl, c.engine.startTag, c.engine.endTag, c.Writer, func(w io.Writer, tag string) (int, error) {
 		switch tag {
 		case "head-meta":
 			return w.Write(s2b(c.Meta.ToHTML()))
 		case "view":
 			return w.Write(s2b(view))
+		case "ssr-content":
+			return w.Write(s2b(ssrContent))
 		case "data-page":
-			pageJSON, _ := json.Marshal(c.data)
-			return htmlEscape(w, pageJSON)
+			pageJSON, _ := jsonMarshal(c.data, true)
+			return escapeJSON(w, pageJSON)
 		case "version":
 			return w.Write(s2b(cmp.Or(c.Meta.Version, "0.0.0")))
 		default:
@@ -460,6 +505,66 @@ var (
 	htmlNull = []byte("\uFFFD")
 )
 
+func escapeJSON(w io.Writer, b []byte) (int, error) {
+	last := 0
+	n := 0
+	var err error
+	for i, c := range b {
+		var quote []byte
+		switch c {
+		case '\\', '"':
+			quote = []byte{'\\', c}
+		case '\b':
+			quote = []byte(`\b`)
+		case '\f':
+			quote = []byte(`\f`)
+		case '\n':
+			quote = []byte(`\n`)
+		case '\r':
+			quote = []byte(`\r`)
+		case '\t':
+			quote = []byte(`\t`)
+		case '<':
+			quote = []byte(`\u003c`)
+		case '>':
+			quote = []byte(`\u003e`)
+		case '&':
+			quote = []byte(`\u0026`)
+		default:
+			if c < 0x20 {
+				// Control characters (U+0000 through U+001F)
+				// must be escaped. This is done by replacing the
+				// character with the six-character sequence
+				// "\u00XX" where XX is the two-digit hexadecimal
+				// representation of the character code.
+				quote = []byte(`\u00`)
+				quote = append(quote, "0123456789abcdef"[c>>4])
+				quote = append(quote, "0123456789abcdef"[c&0xF])
+			}
+			if quote == nil {
+				continue
+			}
+		}
+		wn, err := w.Write(b[last:i])
+		if err != nil {
+			return n, err
+		}
+		n += wn
+		wn, err = w.Write(quote)
+		if err != nil {
+			return n, err
+		}
+		n += wn
+		last = i + 1
+	}
+	wn, err := w.Write(b[last:])
+	if err != nil {
+		return n, err
+	}
+	n += wn
+	return n, nil
+}
+
 // HTMLEscape writes to w the escaped HTML equivalent of the plain text data b.
 func htmlEscape(w io.Writer, b []byte) (int, error) {
 	last := 0
@@ -509,12 +614,96 @@ var bufPool = sync.Pool{
 	},
 }
 
-func jsonMarshal(v any) ([]byte, error) {
+func jsonMarshal(v any, escapeHTML bool) ([]byte, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
-	if err := json.NewEncoder(buf).Encode(v); err != nil {
+	encoder := json.NewEncoder(buf)
+	encoder.SetEscapeHTML(escapeHTML)
+	if err := encoder.Encode(v); err != nil {
 		return nil, err
 	}
+	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
+		buf.Truncate(buf.Len() - 1)
+	}
 	return buf.Bytes(), nil
+}
+
+/************************************/
+/***** GOLANG.ORG/X/NET/CONTEXT *****/
+/************************************/
+
+// hasRequestContext returns whether c.Request has Context and fallback.
+func (c *Context) hasRequestContext() bool {
+	hasRequestContext := c.Request != nil && c.Request.Context() != nil
+	return hasRequestContext
+}
+
+// Deadline returns that there is no deadline (ok==false) when c.Request has no Context.
+func (c *Context) Deadline() (deadline time.Time, ok bool) {
+	if !c.hasRequestContext() {
+		return
+	}
+	return c.Request.Context().Deadline()
+}
+
+// Done returns nil (chan which will wait forever) when c.Request has no Context.
+func (c *Context) Done() <-chan struct{} {
+	if !c.hasRequestContext() {
+		return nil
+	}
+	return c.Request.Context().Done()
+}
+
+// Err returns nil when c.Request has no Context.
+func (c *Context) Err() error {
+	if !c.hasRequestContext() {
+		return nil
+	}
+	return c.Request.Context().Err()
+}
+
+// Value returns the value associated with this context for key, or nil
+// if no value is associated with key. Successive calls to Value with
+// the same key returns the same result.
+func (c *Context) Value(key any) any {
+	if key == ContextRequestKey {
+		return c.Request
+	}
+	if key == ContextKey {
+		return c
+	}
+	if keyAsString, ok := key.(string); ok {
+		if val, exists := c.Get(keyAsString); exists {
+			return val
+		}
+	}
+	if !c.hasRequestContext() {
+		return nil
+	}
+	return c.Request.Context().Value(key)
+}
+
+func FromContext(ctx context.Context) (*Context, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	if v := ctx.Value(ContextKey); v != nil {
+		if c, ok := v.(*Context); ok {
+			return c, true
+		}
+	}
+	return nil, false
+}
+
+func MustFromContext(ctx context.Context) *Context {
+	if ctx == nil {
+		panic("inertia: nil context")
+	}
+	if v := ctx.Value(ContextKey); v != nil {
+		if c, ok := v.(*Context); ok {
+			return c
+		}
+	}
+	panic("inertia: context is not of type *inertia.Context")
 }
