@@ -14,7 +14,6 @@ type Meta struct {
 	Author      string            `json:"author,omitempty"`
 	Viewport    string            `json:"viewport,omitempty"`
 	Charset     string            `json:"charset,omitempty"`
-	Version     string            `json:"version,omitempty"`
 	Custom      map[string]string `json:"custom,omitempty"`
 	OpenGraph   OpenGraph         `json:"og,omitempty"`
 	Twitter     TwitterCard       `json:"twitter,omitempty"`
@@ -45,7 +44,6 @@ func NewMeta() *Meta {
 	return &Meta{
 		Charset:  "UTF-8",
 		Viewport: "width=device-width, initial-scale=1.0",
-		Version:  "0.0.0",
 		Custom:   make(map[string]string),
 	}
 }
@@ -92,12 +90,6 @@ func (m *Meta) SetOpenGraph(og OpenGraph) *Meta {
 // SetTwitterCard sets Twitter Card meta tags
 func (m *Meta) SetTwitterCard(twitter TwitterCard) *Meta {
 	m.Twitter = twitter
-	return m
-}
-
-// SetVersion sets the version string
-func (m *Meta) SetVersion(version string) *Meta {
-	m.Version = version
 	return m
 }
 

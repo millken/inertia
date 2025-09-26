@@ -2,7 +2,6 @@ package inertia
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -388,9 +388,9 @@ func (c *Context) ClientIP() string {
 
 func (c *Context) Render(view string) error {
 	var err error
-	c.Set("_ViEW_", view)
 
 	if c.GetHeader("X-Pjax") == "true" {
+		c.Set("_ViEW_", view)
 		return c.JSON(c.data)
 	}
 
@@ -428,10 +428,11 @@ func (c *Context) Render(view string) error {
 		case "ssr-content":
 			return w.Write(s2b(ssrContent))
 		case "data-page":
+			c.Set("_ViEW_", view)
 			pageJSON, _ := jsonMarshal(c.data, true)
 			return escapeJSON(w, pageJSON)
 		case "version":
-			return w.Write(s2b(cmp.Or(c.Meta.Version, "0.0.0")))
+			return w.Write(s2b(strconv.FormatInt(c.engine.bootTime, 10)))
 		default:
 		}
 		return 0, nil

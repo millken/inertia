@@ -1,13 +1,14 @@
+// Package inertia provides a Go web framework for building modern web applications using the Inertia.js approach.
 package inertia
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/millken/inertia/router"
 	"github.com/millken/inertia/ssr"
@@ -23,7 +24,7 @@ var (
 <body>
   <div id="app"><!--inertia-ssr-content-inertia--></div>
   <script>window.__INERTIA_PAGE_DATA__="<!--inertia-data-page-inertia-->";</script>
-  <script type="module" src="/main.js?v=<!--inertia-version-inertia-->"></script>
+  <script type="module" src="/main.js?_bt=<!--inertia-version-inertia-->"></script>
 </body>`
 )
 
@@ -83,16 +84,10 @@ func WithMode(mode Mode) Option {
 	}
 }
 
-type SSR interface {
-	RenderTemplate(ctx context.Context, tpl string, data map[string]any) (string, error)
-	RenderComponent(ctx context.Context, name string, data map[string]any) (string, error)
-	RenderPage(ctx context.Context, url string, data map[string]any) (string, error)
-	Close()
-}
-
 // Engine is the main Inertia instance that holds the router and middleware.
 
 type Engine struct {
+	bootTime           int64
 	mode               Mode
 	devAddr            string
 	MaxMultipartMemory int64
@@ -107,6 +102,7 @@ type Engine struct {
 func New(options ...Option) (*Engine, error) {
 	var err error
 	e := &Engine{
+		bootTime:           time.Now().Unix(),
 		mode:               ModeProduction,
 		devAddr:            "http://localhost:5173",
 		addr:               ":5000",
