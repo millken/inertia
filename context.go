@@ -413,7 +413,7 @@ func (c *Context) Render(view string) error {
 
 	var ssrContent string
 	if c.engine.IsSSRMode() && c.engine.ssr != nil {
-		ssrContent, err = c.engine.ssr.RenderPage(c, view, c.data)
+		ssrContent, err = c.engine.ssr.RenderComponent(view, c.data)
 		if err != nil {
 			slog.Error("SSR render error", slog.Any("error", err))
 		}

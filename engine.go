@@ -10,6 +10,7 @@ import (
 	"net/url"
 
 	"github.com/millken/inertia/router"
+	"github.com/millken/inertia/ssr"
 )
 
 var (
@@ -68,7 +69,7 @@ func WithTags(startTag, endTag string) Option {
 	}
 }
 
-func WithSSR(ssr SSR) Option {
+func WithSSR(ssr ssr.VM) Option {
 	return func(e *Engine) error {
 		e.ssr = ssr
 		return nil
@@ -97,7 +98,7 @@ type Engine struct {
 	MaxMultipartMemory int64
 	rootHTML           string
 	startTag, endTag   string
-	ssr                SSR
+	ssr                ssr.VM
 	addr               string
 	router             *router.Router[HandlerFunc]
 	middleware         []HandlerFunc

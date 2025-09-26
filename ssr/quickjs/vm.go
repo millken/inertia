@@ -42,11 +42,6 @@ func NewVM(options ...ssr.Option) (vm *VM, err error) {
 	}
 	vm.bundlerJS = vmOpts.BundlerJS
 
-	for _, option := range options {
-		// noop: already applied to vmOpts
-		_ = option
-	}
-
 	if vm.bundlerJS != "" {
 		script := fmt.Sprintf("var module = { exports: {} }; var exports = module.exports; %s;", vm.bundlerJS)
 		ret := vm.context.Eval(script)
