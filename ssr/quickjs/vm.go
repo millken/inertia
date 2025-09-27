@@ -41,7 +41,7 @@ func NewVM(options ...ssr.Option) (vm *VM, err error) {
 	}()
 
 	if vm.Options.BundlerJS != "" {
-		script := fmt.Sprintf("var module = { exports: {} }; var exports = module.exports; %s;", vm.bundlerJS)
+		script := fmt.Sprintf("var module = { exports: {} }; var exports = module.exports; %s;", vm.Options.BundlerJS)
 		ret := vm.context.Eval(script)
 		if err = ret.ToError(); err != nil {
 			err = fmt.Errorf("failed to run bundler script: %w", err)

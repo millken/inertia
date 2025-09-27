@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/buke/quickjs-go v0.6.0
 	github.com/dnsoa/go/assert v1.1.2
-	github.com/millken/inertia/ssr v0.0.0
+	github.com/millken/inertia/ssr v1.0.1
 )
 
-replace github.com/millken/inertia/ssr => ../
+// replace github.com/millken/inertia/ssr => ../
