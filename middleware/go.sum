@@ -1,0 +1,4 @@
+github.com/millken/inertia v0.0.0-20250927030422-48ba47f303b1 h1:XJmF9aOk2F+yk3X56Is8u3FQTcTdlmIo5mejdcavDDE=
+github.com/millken/inertia v0.0.0-20250927030422-48ba47f303b1/go.mod h1:4z6a1yYi5iYcLWmbJQGMM9AJnnWhIQd6GqXKAa00Jek=
+github.com/millken/inertia/ssr v1.0.1 h1:4HrjBEGoPArllQSLZu6Xcy39FMXdVunOO5CmJ/CDkCo=
+github.com/millken/inertia/ssr v1.0.1/go.mod h1:N19ayoBfkuURiPoBz2nbxVtR8RKWlffM7CVpdKpat0Y=
