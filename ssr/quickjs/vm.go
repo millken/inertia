@@ -11,7 +11,7 @@ import (
 var _ ssr.VM = (*VM)(nil)
 
 type VM struct {
-	bundlerJS   string
+	*ssr.BaseVM
 	runtime     *quickjs.Runtime
 	context     *quickjs.Context
 	initialized bool
@@ -19,9 +19,16 @@ type VM struct {
 }
 
 func NewVM(options ...ssr.Option) (vm *VM, err error) {
+	// Create BaseVM first
+	baseVM, err := ssr.NewBaseVM(options...)
+	if err != nil {
+		return nil, err
+	}
+
 	runtime := quickjs.NewRuntime()
 	ctx := runtime.NewContext()
 	vm = &VM{
+		BaseVM:  baseVM,
 		runtime: runtime,
 		context: ctx,
 	}
@@ -33,16 +40,7 @@ func NewVM(options ...ssr.Option) (vm *VM, err error) {
 		}
 	}()
 
-	// apply ssr options
-	var vmOpts ssr.VMOptions
-	for _, option := range options {
-		if err = option(&vmOpts); err != nil {
-			return nil, err
-		}
-	}
-	vm.bundlerJS = vmOpts.BundlerJS
-
-	if vm.bundlerJS != "" {
+	if vm.Options.BundlerJS != "" {
 		script := fmt.Sprintf("var module = { exports: {} }; var exports = module.exports; %s;", vm.bundlerJS)
 		ret := vm.context.Eval(script)
 		if err = ret.ToError(); err != nil {
@@ -71,6 +69,12 @@ func (vm *VM) Close() {
 }
 
 func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
+	// Try cache first
+	cacheKey := vm.GenerateCacheKey(tpl, data)
+	if cached, found := vm.TryCache(cacheKey); found {
+		return cached, nil
+	}
+
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
@@ -93,10 +97,21 @@ func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
 		return "", err
 	}
 	vm.context.Loop()
-	return ret.ToString(), nil
+	result := ret.ToString()
+
+	// Cache the result
+	vm.SetCache(cacheKey, result)
+
+	return result, nil
 }
 
 func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) {
+	// Try cache first
+	cacheKey := vm.GenerateCacheKey(name, data)
+	if cached, found := vm.TryCache(cacheKey); found {
+		return cached, nil
+	}
+
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
@@ -117,5 +132,10 @@ func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) 
 		return "", err
 	}
 	vm.context.Loop()
-	return ret.ToString(), nil
+	result := ret.ToString()
+
+	// Cache the result
+	vm.SetCache(cacheKey, result)
+
+	return result, nil
 }
