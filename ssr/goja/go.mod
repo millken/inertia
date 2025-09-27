@@ -3,9 +3,8 @@ module github.com/millken/inertia/ssr/goja
 go 1.24.4
 
 require (
-	github.com/dnsoa/go/assert v1.1.2
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
-	github.com/millken/inertia/ssr v0.0.0
+	github.com/millken/inertia/ssr v1.0.1
 )
 
 require (
@@ -15,4 +14,3 @@ require (
 	golang.org/x/text v0.3.8 // indirect
 )
 
-replace github.com/millken/inertia/ssr => ../

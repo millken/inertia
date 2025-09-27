@@ -1,13 +1,11 @@
 module github.com/millken/inertia/ssr/v8go
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.24.4
 
 require (
 	github.com/dnsoa/go/assert v1.1.2
-	github.com/millken/inertia/ssr v1.0.0
-	github.com/tommie/v8go v0.33.0
+	github.com/millken/inertia/ssr v1.0.1
+	github.com/tommie/v8go v0.12.0
 )
 
 require (
