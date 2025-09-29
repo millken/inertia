@@ -37,6 +37,7 @@ const (
 )
 
 type HandlerFunc func(c *Context)
+type HandlerFuncs []HandlerFunc
 
 // Option is an option parameter that modifies Inertia.
 type Option func(e *Engine) error
@@ -95,8 +96,8 @@ type Engine struct {
 	startTag, endTag   string
 	ssr                ssr.VM
 	addr               string
-	router             *router.Router[HandlerFunc]
-	middleware         []HandlerFunc
+	router             *router.Router[HandlerFuncs]
+	middleware         HandlerFuncs
 }
 
 func New(options ...Option) (*Engine, error) {
@@ -110,7 +111,7 @@ func New(options ...Option) (*Engine, error) {
 		startTag:           "<!--inertia-", //注释标记可以防止被前端框架（如 Vue、React）误删
 		endTag:             "-inertia-->",
 		MaxMultipartMemory: 32 << 20, // 32 MB
-		router:             router.New[HandlerFunc](),
+		router:             router.New[HandlerFuncs](),
 	}
 	for _, option := range options {
 		if err = option(e); err != nil {
@@ -130,35 +131,35 @@ func (e *Engine) IsSSRMode() bool {
 	return e.mode == ModeSSR
 }
 
-func (e *Engine) GET(path string, fn func(c *Context)) {
+func (e *Engine) GET(path string, fn ...HandlerFunc) {
 	e.router.Add("GET", path, fn)
 }
 
-func (e *Engine) POST(path string, fn func(c *Context)) {
+func (e *Engine) POST(path string, fn ...HandlerFunc) {
 	e.router.Add("POST", path, fn)
 }
 
-func (e *Engine) PUT(path string, fn func(c *Context)) {
+func (e *Engine) PUT(path string, fn ...HandlerFunc) {
 	e.router.Add("PUT", path, fn)
 }
 
-func (e *Engine) DELETE(path string, fn func(c *Context)) {
+func (e *Engine) DELETE(path string, fn ...HandlerFunc) {
 	e.router.Add("DELETE", path, fn)
 }
 
-func (e *Engine) PATCH(path string, fn func(c *Context)) {
+func (e *Engine) PATCH(path string, fn ...HandlerFunc) {
 	e.router.Add("PATCH", path, fn)
 }
 
-func (e *Engine) OPTIONS(path string, fn func(c *Context)) {
+func (e *Engine) OPTIONS(path string, fn ...HandlerFunc) {
 	e.router.Add("OPTIONS", path, fn)
 }
 
-func (e *Engine) HEAD(path string, fn func(c *Context)) {
+func (e *Engine) HEAD(path string, fn ...HandlerFunc) {
 	e.router.Add("HEAD", path, fn)
 }
 
-func (e *Engine) ANY(path string, fn func(c *Context)) {
+func (e *Engine) ANY(path string, fn ...HandlerFunc) {
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"} {
 		e.router.Add(method, path, fn)
 	}
@@ -204,7 +205,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Combine middleware and handler into handlers chain
 		ctx.handlers = ctx.handlers[:0] // reset slice but keep capacity
 		ctx.handlers = append(ctx.handlers, e.middleware...)
-		ctx.handlers = append(ctx.handlers, fn)
+		ctx.handlers = append(ctx.handlers, fn...)
 
 		// Start execution chain
 		ctx.Next()
