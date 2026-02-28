@@ -137,7 +137,10 @@ func JsonMarshal(v any) ([]byte, error) {
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
 		buf.Truncate(buf.Len() - 1)
 	}
-	return buf.Bytes(), nil
+	// NOTE: buf.Bytes() becomes invalid once the buffer is returned to the pool.
+	// Always copy the bytes out before returning.
+	out := append([]byte(nil), buf.Bytes()...)
+	return out, nil
 }
 
 // lruCache is a simple thread-safe LRU cache implementing Cache.
