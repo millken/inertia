@@ -22,9 +22,13 @@ var (
 		http.StatusForbidden: func(w http.ResponseWriter, r *http.Request, err error) {
 			http.Error(w, "403 Forbidden", http.StatusForbidden)
 		},
+		http.StatusBadGateway: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.Error("bad gateway", slog.Any("error", err), slog.Int("status", http.StatusBadGateway), slog.String("method", r.Method), slog.String("path", r.URL.Path))
+			http.Error(w, "502 Bad Gateway", http.StatusBadGateway)
+		},
 
 		http.StatusInternalServerError: func(w http.ResponseWriter, r *http.Request, err error) {
-			slog.Error(err.Error(), slog.Int("status", http.StatusInternalServerError), slog.String("method", r.Method), slog.String("path", r.URL.Path))
+			slog.Error("internal server error", slog.Any("error", err), slog.Int("status", http.StatusInternalServerError), slog.String("method", r.Method), slog.String("path", r.URL.Path))
 			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		},
 	}

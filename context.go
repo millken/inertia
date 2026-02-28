@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -200,7 +201,11 @@ func (c *Context) reset() {
 	c.Writer = &c.writermem
 	c.Params = c.Params[:0]
 	c.handlers = c.handlers[:0]
-	c.data = make(map[string]any, 8)
+	if c.data == nil {
+		c.data = make(map[string]any, 8)
+	} else {
+		clear(c.data)
+	}
 	c.index = -1
 	c.queryCache = nil
 	c.formCache = nil
@@ -360,29 +365,20 @@ func (c *Context) SetMeta(meta Meta) {
 }
 
 func (c *Context) ClientIP() string {
-	// Check X-Forwarded-For header first
 	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For can contain multiple IPs, the first one is the client IP
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
+		ip, _, _ := strings.Cut(xff, ",")
+		return strings.TrimSpace(ip)
 	}
-
-	// Check X-Real-IP header
 	if xrip := c.GetHeader("X-Real-IP"); xrip != "" {
 		return strings.TrimSpace(xrip)
 	}
-
-	// Fallback to RemoteAddr
-	if ip := c.Request.RemoteAddr; ip != "" {
-		// RemoteAddr can be in the form "IP:port", we need to extract the IP part
-		if colonPos := strings.LastIndex(ip, ":"); colonPos != -1 {
-			return ip[:colonPos]
+	if c.Request.RemoteAddr != "" {
+		host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+		if err != nil {
+			return c.Request.RemoteAddr
 		}
-		return ip
+		return host
 	}
-
 	return ""
 }
 
@@ -396,17 +392,8 @@ func (c *Context) Render(view string) error {
 
 	// 在开发模式下，优先尝试从 DevHost 获取 root HTML，获取失败则回退到本地模板
 	var tpl []byte
-	if c.engine.IsDevelopentMode() {
-		body, err := http.Get(c.engine.devAddr)
-		if err == nil && body.StatusCode == http.StatusOK {
-			defer body.Body.Close()
-			tpl, err = io.ReadAll(body.Body)
-			if err != nil {
-				tpl = s2b(c.engine.rootHTML)
-			}
-		} else {
-			tpl = s2b(c.engine.rootHTML)
-		}
+	if c.engine.IsDevelopmentMode() {
+		tpl = c.fetchDevTemplate()
 	} else {
 		tpl = s2b(c.engine.rootHTML)
 	}
@@ -439,6 +426,34 @@ func (c *Context) Render(view string) error {
 	})
 
 	return err
+}
+
+// fetchDevTemplate fetches root HTML from the dev server, falling back to the local template on any error.
+func (c *Context) fetchDevTemplate() []byte {
+	if c.Request == nil {
+		return s2b(c.engine.rootHTML)
+	}
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, c.engine.devAddr, nil)
+	if err != nil {
+		return s2b(c.engine.rootHTML)
+	}
+	client := c.engine.devHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return s2b(c.engine.rootHTML)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return s2b(c.engine.rootHTML)
+	}
+	tpl, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return s2b(c.engine.rootHTML)
+	}
+	return tpl
 }
 
 const abortIndex int8 = 63
@@ -496,15 +511,6 @@ func executeFunc(template []byte, startTag, endTag string, w io.Writer, f TagFun
 }
 
 // HTML escaping.
-
-var (
-	htmlQuot = []byte("&#34;") // shorter than "&quot;"
-	htmlApos = []byte("&#39;") // shorter than "&apos;" and apos was not in HTML until HTML5
-	htmlAmp  = []byte("&amp;")
-	htmlLt   = []byte("&lt;")
-	htmlGt   = []byte("&gt;")
-	htmlNull = []byte("\uFFFD")
-)
 
 func escapeJSON(w io.Writer, b []byte) (int, error) {
 	last := 0
@@ -566,49 +572,6 @@ func escapeJSON(w io.Writer, b []byte) (int, error) {
 	return n, nil
 }
 
-// HTMLEscape writes to w the escaped HTML equivalent of the plain text data b.
-func htmlEscape(w io.Writer, b []byte) (int, error) {
-	last := 0
-	n := 0
-	var err error
-	for i, c := range b {
-		var html []byte
-		switch c {
-		case '\000':
-			html = htmlNull
-		case '"':
-			html = htmlQuot
-		case '\'':
-			html = htmlApos
-		case '&':
-			html = htmlAmp
-		case '<':
-			html = htmlLt
-		case '>':
-			html = htmlGt
-		default:
-			continue
-		}
-		wn, err := w.Write(b[last:i])
-		if err != nil {
-			return n, err
-		}
-		n += wn
-		wn, err = w.Write(html)
-		if err != nil {
-			return n, err
-		}
-		n += wn
-		last = i + 1
-	}
-	wn, err := w.Write(b[last:])
-	if err != nil {
-		return n, err
-	}
-	n += wn
-	return n, nil
-}
-
 var bufPool = sync.Pool{
 	New: func() any {
 		return new(bytes.Buffer)
@@ -627,7 +590,10 @@ func jsonMarshal(v any, escapeHTML bool) ([]byte, error) {
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
 		buf.Truncate(buf.Len() - 1)
 	}
-	return buf.Bytes(), nil
+	// NOTE: buf.Bytes() becomes invalid once the buffer is returned to the pool.
+	// Always copy the bytes out before returning.
+	out := append([]byte(nil), buf.Bytes()...)
+	return out, nil
 }
 
 /************************************/
@@ -636,8 +602,7 @@ func jsonMarshal(v any, escapeHTML bool) ([]byte, error) {
 
 // hasRequestContext returns whether c.Request has Context and fallback.
 func (c *Context) hasRequestContext() bool {
-	hasRequestContext := c.Request != nil && c.Request.Context() != nil
-	return hasRequestContext
+	return c.Request != nil
 }
 
 // Deadline returns that there is no deadline (ok==false) when c.Request has no Context.

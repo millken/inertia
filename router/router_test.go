@@ -46,29 +46,31 @@ func TestRoute(t *testing.T) {
 
 func TestRoute2(t *testing.T) {
 	r := New[int]()
-	tests := []struct {
-		method  string
-		pattern string
-		handler int
-		path    string
-		found   bool
-		params  []Parameter
-	}{
-		{"GET", "/", 11, "/", true, nil},
-		{"GET", "/*", 22, "/", true, nil},
+	r.Add("GET", "/", 11)
+	r.Add("GET", "/*", 22)
+
+	// Exact match should take precedence for '/'
+	found, v, params := r.Lookup("GET", "/")
+	if !found {
+		t.Fatal("handler not found")
 	}
-	for _, test := range tests {
-		r.Add(test.method, test.pattern, test.handler)
-		found, v, params := r.Lookup(test.method, test.path)
-		if found != test.found {
-			t.Fatalf("expected found %v, got %v for path %s", test.found, found, test.path)
-		}
-		if v != test.handler {
-			t.Fatalf("expected handler %d, got %d for path %s", test.handler, v, test.path)
-		}
-		if len(params) != len(test.params) {
-			t.Fatalf("expected %d params, got %d for path %s", len(test.params), len(params), test.path)
-		}
+	if v != 11 {
+		t.Fatalf("expected handler %d, got %d for path %s", 11, v, "/")
+	}
+	if len(params) != 0 {
+		t.Fatalf("expected %d params, got %d for path %s", 0, len(params), "/")
+	}
+
+	// Wildcard should match other paths
+	found, v, params = r.Lookup("GET", "/abc")
+	if !found {
+		t.Fatal("handler not found")
+	}
+	if v != 22 {
+		t.Fatalf("expected handler %d, got %d for path %s", 22, v, "/abc")
+	}
+	if len(params) != 1 || params[0] != (Parameter{Key: "", Value: "abc"}) {
+		t.Fatalf("expected params %v, got %v for path %s", []Parameter{{Key: "", Value: "abc"}}, params, "/abc")
 	}
 }
 func TestParameterRoute(t *testing.T) {

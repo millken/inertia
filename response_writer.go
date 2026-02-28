@@ -13,7 +13,9 @@ const (
 	defaultStatus = http.StatusOK
 )
 
-var errHijackAlreadyWritten = errors.New("gin: response already written")
+var errHijackAlreadyWritten = errors.New("inertia: response already written")
+
+var closeNotifyChan = make(chan bool)
 
 // ResponseWriter ...
 type ResponseWriter interface {
@@ -111,18 +113,30 @@ func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if w.size < 0 {
 		w.size = 0
 	}
-	return w.ResponseWriter.(http.Hijacker).Hijack()
+	hj, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hj.Hijack()
 }
 
 // CloseNotify implements the http.CloseNotifier interface.
 func (w *responseWriter) CloseNotify() <-chan bool {
-	return w.ResponseWriter.(http.CloseNotifier).CloseNotify()
+	cn, ok := w.ResponseWriter.(http.CloseNotifier)
+	if !ok {
+		return closeNotifyChan
+	}
+	return cn.CloseNotify()
 }
 
 // Flush implements the http.Flusher interface.
 func (w *responseWriter) Flush() {
 	w.WriteHeaderNow()
-	w.ResponseWriter.(http.Flusher).Flush()
+	fl, ok := w.ResponseWriter.(http.Flusher)
+	if !ok {
+		return
+	}
+	fl.Flush()
 }
 
 func (w *responseWriter) Pusher() (pusher http.Pusher) {

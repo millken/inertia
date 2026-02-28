@@ -1,7 +1,7 @@
 package inertia
 
 import (
-	"fmt"
+	"html"
 	"maps"
 	"strings"
 )
@@ -93,96 +93,60 @@ func (m *Meta) SetTwitterCard(twitter TwitterCard) *Meta {
 	return m
 }
 
+// writeMetaTag writes a single <meta> tag to sb if content is non-empty,
+// escaping attribute values for XSS safety.
+func writeMetaTag(sb *strings.Builder, attr, name, content string) {
+	if content == "" {
+		return
+	}
+	sb.WriteString("<meta ")
+	sb.WriteString(attr)
+	sb.WriteString(`="`)
+	sb.WriteString(html.EscapeString(name))
+	sb.WriteString(`" content="`)
+	sb.WriteString(html.EscapeString(content))
+	sb.WriteString("\">\n")
+}
+
 // ToHTML converts Meta to HTML meta tags
 func (m *Meta) ToHTML() string {
 	var sb strings.Builder
 
 	if m.Charset != "" {
-		sb.WriteString(fmt.Sprintf(`<meta charset="%s">`, m.Charset))
-		sb.WriteString("\n")
+		sb.WriteString(`<meta charset="`)
+		sb.WriteString(html.EscapeString(m.Charset))
+		sb.WriteString("\">\n")
 	}
 
-	if m.Viewport != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="viewport" content="%s">`, m.Viewport))
-		sb.WriteString("\n")
-	}
+	writeMetaTag(&sb, "name", "viewport", m.Viewport)
 
 	if m.Title != "" {
-		sb.WriteString(fmt.Sprintf(`<title>%s</title>`, m.Title))
-		sb.WriteString("\n")
+		sb.WriteString("<title>")
+		sb.WriteString(html.EscapeString(m.Title))
+		sb.WriteString("</title>\n")
 	}
 
-	if m.Description != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="description" content="%s">`, m.Description))
-		sb.WriteString("\n")
-	}
+	writeMetaTag(&sb, "name", "description", m.Description)
+	writeMetaTag(&sb, "name", "keywords", m.Keywords)
+	writeMetaTag(&sb, "name", "author", m.Author)
 
-	if m.Keywords != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="keywords" content="%s">`, m.Keywords))
-		sb.WriteString("\n")
-	}
-
-	if m.Author != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="author" content="%s">`, m.Author))
-		sb.WriteString("\n")
-	}
-
-	// Custom meta tags
 	for name, content := range m.Custom {
-		sb.WriteString(fmt.Sprintf(`<meta name="%s" content="%s">`, name, content))
-		sb.WriteString("\n")
+		writeMetaTag(&sb, "name", name, content)
 	}
 
-	// Open Graph tags
-	if m.OpenGraph.Title != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:title" content="%s">`, m.OpenGraph.Title))
-		sb.WriteString("\n")
-	}
-	if m.OpenGraph.Description != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:description" content="%s">`, m.OpenGraph.Description))
-		sb.WriteString("\n")
-	}
-	if m.OpenGraph.Image != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:image" content="%s">`, m.OpenGraph.Image))
-		sb.WriteString("\n")
-	}
-	if m.OpenGraph.URL != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:url" content="%s">`, m.OpenGraph.URL))
-		sb.WriteString("\n")
-	}
-	if m.OpenGraph.Type != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:type" content="%s">`, m.OpenGraph.Type))
-		sb.WriteString("\n")
-	}
-	if m.OpenGraph.SiteName != "" {
-		sb.WriteString(fmt.Sprintf(`<meta property="og:site_name" content="%s">`, m.OpenGraph.SiteName))
-		sb.WriteString("\n")
-	}
+	writeMetaTag(&sb, "property", "og:title", m.OpenGraph.Title)
+	writeMetaTag(&sb, "property", "og:description", m.OpenGraph.Description)
+	writeMetaTag(&sb, "property", "og:image", m.OpenGraph.Image)
+	writeMetaTag(&sb, "property", "og:url", m.OpenGraph.URL)
+	writeMetaTag(&sb, "property", "og:type", m.OpenGraph.Type)
+	writeMetaTag(&sb, "property", "og:site_name", m.OpenGraph.SiteName)
 
-	// Twitter Card tags
-	if m.Twitter.Card != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:card" content="%s">`, m.Twitter.Card))
-		sb.WriteString("\n")
-	}
-	if m.Twitter.Site != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:site" content="%s">`, m.Twitter.Site))
-		sb.WriteString("\n")
-	}
-	if m.Twitter.Creator != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:creator" content="%s">`, m.Twitter.Creator))
-		sb.WriteString("\n")
-	}
-	if m.Twitter.Title != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:title" content="%s">`, m.Twitter.Title))
-		sb.WriteString("\n")
-	}
-	if m.Twitter.Description != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:description" content="%s">`, m.Twitter.Description))
-		sb.WriteString("\n")
-	}
-	if m.Twitter.Image != "" {
-		sb.WriteString(fmt.Sprintf(`<meta name="twitter:image" content="%s">`, m.Twitter.Image))
-	}
+	writeMetaTag(&sb, "name", "twitter:card", m.Twitter.Card)
+	writeMetaTag(&sb, "name", "twitter:site", m.Twitter.Site)
+	writeMetaTag(&sb, "name", "twitter:creator", m.Twitter.Creator)
+	writeMetaTag(&sb, "name", "twitter:title", m.Twitter.Title)
+	writeMetaTag(&sb, "name", "twitter:description", m.Twitter.Description)
+	writeMetaTag(&sb, "name", "twitter:image", m.Twitter.Image)
 
 	return sb.String()
 }

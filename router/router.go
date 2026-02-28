@@ -2,7 +2,6 @@ package router
 
 import (
 	"errors"
-	"strings"
 )
 
 const Methods = "GET|POST|DELETE|PUT|PATCH|OPTIONS|HEAD"
@@ -27,39 +26,38 @@ func New[T any]() *Router[T] {
 
 // Add registers a new handler for the given method and path.
 func (router *Router[T]) Add(method string, path string, handler T) error {
-	if !strings.Contains(Methods, method) {
+	tree := router.selectTree(method)
+	if tree == nil {
 		return ErrMethodNotAllowed
 	}
-	tree := router.selectTree(method)
 	tree.Add(path, handler)
 	return nil
 }
 
 // Lookup finds the handler and parameters for the given route.
 func (router *Router[T]) Lookup(method string, path string) (bool, T, []Parameter) {
-	if method == "" || path == "" || !strings.Contains(Methods, method) {
+	if method == "" || path == "" {
 		var empty T
 		return false, empty, nil
 	}
-	if method[0] == 'G' {
-		return router.get.Lookup(path)
-	}
-
 	tree := router.selectTree(method)
+	if tree == nil {
+		var empty T
+		return false, empty, nil
+	}
 	return tree.Lookup(path)
 }
 
 // LookupNoAlloc finds the handler and parameters for the given route without using any memory allocations.
 func (router *Router[T]) LookupNoAlloc(method string, path string, addParameter func(string, string)) (bool, T) {
 	var empty T
-	if method == "" || path == "" || !strings.Contains(Methods, method) {
+	if method == "" || path == "" {
 		return false, empty
 	}
-	if method[0] == 'G' {
-		return router.get.LookupNoAlloc(path, addParameter)
-	}
-
 	tree := router.selectTree(method)
+	if tree == nil {
+		return false, empty
+	}
 	return tree.LookupNoAlloc(path, addParameter)
 }
 

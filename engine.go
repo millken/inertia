@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/millken/inertia/router"
@@ -91,6 +92,10 @@ type Engine struct {
 	bootTime           int64
 	mode               Mode
 	devAddr            string
+	devHTTPClient      *http.Client
+	devProxyOnce       sync.Once
+	devProxy           *httputil.ReverseProxy
+	devProxyErr        error
 	MaxMultipartMemory int64
 	rootHTML           string
 	startTag, endTag   string
@@ -106,6 +111,7 @@ func New(options ...Option) (*Engine, error) {
 		bootTime:           time.Now().Unix(),
 		mode:               ModeProduction,
 		devAddr:            "http://localhost:5173",
+		devHTTPClient:      &http.Client{Timeout: 2 * time.Second},
 		addr:               ":5000",
 		rootHTML:           defaultRootHTML,
 		startTag:           "<!--inertia-", //注释标记可以防止被前端框架（如 Vue、React）误删
@@ -121,8 +127,8 @@ func New(options ...Option) (*Engine, error) {
 	return e, nil
 }
 
-// IsDevelopentMode returns true if the engine is in development mode
-func (e *Engine) IsDevelopentMode() bool {
+// IsDevelopmentMode returns true if the engine is in development mode.
+func (e *Engine) IsDevelopmentMode() bool {
 	return e.mode == ModeDevelopment
 }
 
@@ -175,7 +181,7 @@ func (e *Engine) DevAddr() string {
 
 // StaticFS serves static assets from the given path
 func (e *Engine) StaticFS(path string, fs fs.FS) {
-	if e.IsDevelopentMode() {
+	if e.IsDevelopmentMode() {
 		// in dev mode, we do not serve static assets, they are served by the dev server
 		return
 	}
@@ -203,7 +209,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx.engine = e
 
 		// Combine middleware and handler into handlers chain
-		ctx.handlers = ctx.handlers[:0] // reset slice but keep capacity
 		ctx.handlers = append(ctx.handlers, e.middleware...)
 		ctx.handlers = append(ctx.handlers, fn...)
 
@@ -214,7 +219,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 如果是 devMode，未命中路由的请求都转发到开发服务器
-	if e.IsDevelopentMode() {
+	if e.IsDevelopmentMode() {
 		e.proxyToDevServer(w, r)
 		return
 	}
@@ -223,37 +228,55 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *Engine) Serve() error {
-	if e.IsDevelopentMode() {
-		slog.Info(fmt.Sprintf("Starting in development mode, proxying to development server at %s", e.devAddr))
+	if e.IsDevelopmentMode() {
+		slog.Info("starting server", "mode", "development", "proxy", e.devAddr)
 	} else if e.IsSSRMode() {
-		slog.Info(fmt.Sprintf("Starting in SSR mode at http://%s", e.Addr()))
+		slog.Info("starting server", "mode", "ssr", "addr", e.Addr())
 	} else {
-		slog.Info(fmt.Sprintf("Starting in production mode at http://%s", e.Addr()))
+		slog.Info("starting server", "mode", "production", "addr", e.Addr())
 	}
 	return http.ListenAndServe(e.Addr(), e)
 }
 
+func (e *Engine) devProxyForRequest() (*httputil.ReverseProxy, error) {
+	e.devProxyOnce.Do(func() {
+		target, err := url.Parse(e.devAddr)
+		if err != nil {
+			e.devProxyErr = err
+			return
+		}
+
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		origDirector := proxy.Director
+		proxy.Director = func(req *http.Request) {
+			origPath := req.URL.Path
+			origRawQuery := req.URL.RawQuery
+			origDirector(req)
+			// Keep the original request URL path and query (avoid target path joining).
+			req.URL.Path = origPath
+			req.URL.RawQuery = origRawQuery
+			req.Host = target.Host
+		}
+		proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
+			slog.Error("proxyToDevServer: proxy error", slog.Any("error", eErr))
+			ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
+		}
+		e.devProxy = proxy
+	})
+
+	if e.devProxyErr != nil {
+		return nil, e.devProxyErr
+	}
+	return e.devProxy, nil
+}
+
 // proxyToDevServer uses ReverseProxy to forward the request (including websocket upgrades) to dev server
 func (e *Engine) proxyToDevServer(w http.ResponseWriter, r *http.Request) {
-	target, err := url.Parse(e.devAddr)
+	proxy, err := e.devProxyForRequest()
 	if err != nil {
-		slog.Error("proxyToDevServer: parse devAddr error", slog.Any("error", err))
+		slog.Error("proxyToDevServer: init proxy error", slog.Any("error", err))
 		ErrorHandlerMap[http.StatusInternalServerError](w, r, err)
 		return
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// preserve original host header
-	origDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		origDirector(req)
-		// keep the original request URL path and query
-		req.URL.Path = r.URL.Path
-		req.URL.RawQuery = r.URL.RawQuery
-		req.Host = target.Host
-	}
-	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
-		slog.Error("proxyToDevServer: proxy error", slog.Any("error", eErr))
-		ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
 	}
 	proxy.ServeHTTP(w, r)
 }

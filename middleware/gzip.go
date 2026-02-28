@@ -13,7 +13,7 @@ import (
 	"github.com/millken/inertia"
 )
 
-var DefaultExcludedExtentions = []string{
+var DefaultExcludedExtensions = []string{
 	".png", ".gif", ".jpeg", ".jpg", ".js", ".css", ".woff", ".woff2", ".ttf", ".eot", ".svg", ".mp4", ".mp3", ".avi", ".mov", ".mkv", ".zip", ".rar", ".7z", ".gz", ".tar",
 }
 
@@ -50,7 +50,7 @@ func (g *gzipResponseWriter) Flush() {
 type GzipOption func(*gzipOptions)
 type gzipOptions struct {
 	Level                  int
-	ExcludedExtentions     []string
+	ExcludedExtensions     []string
 	customShouldCompressFn func(req *http.Request) bool
 }
 
@@ -66,9 +66,9 @@ func WithGzipShouldCompressFn(fn func(req *http.Request) bool) GzipOption {
 	}
 }
 
-func WithGzipExcludedExtentions(exts []string) GzipOption {
+func WithGzipExcludedExtensions(exts []string) GzipOption {
 	return func(opts *gzipOptions) {
-		opts.ExcludedExtentions = exts
+		opts.ExcludedExtensions = exts
 	}
 }
 
@@ -76,7 +76,7 @@ func Gzip(options ...GzipOption) inertia.HandlerFunc {
 	// set default options
 	opts := &gzipOptions{
 		Level:                  gzip.DefaultCompression,
-		ExcludedExtentions:     DefaultExcludedExtentions,
+		ExcludedExtensions:     DefaultExcludedExtensions,
 		customShouldCompressFn: func(req *http.Request) bool { return false },
 	}
 	for _, option := range options {
@@ -100,7 +100,7 @@ func Gzip(options ...GzipOption) inertia.HandlerFunc {
 
 		// Check if the request path is excluded from compression
 		extension := filepath.Ext(req.URL.Path)
-		return opts.customShouldCompressFn(req) || slices.Contains(opts.ExcludedExtentions, extension)
+		return opts.customShouldCompressFn(req) || !slices.Contains(opts.ExcludedExtensions, extension)
 	}
 	return func(c *inertia.Context) {
 		if c.Request == nil || !shouldCompress(c.Request) {
