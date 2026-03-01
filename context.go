@@ -578,10 +578,18 @@ var bufPool = sync.Pool{
 	},
 }
 
+const maxPooledJSONBufferCapacity = 256 * 1024
+
 func jsonMarshal(v any, escapeHTML bool) ([]byte, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer bufPool.Put(buf)
+	defer func() {
+		buf.Reset()
+		// Avoid retaining very large buffers in the pool.
+		if buf.Cap() <= maxPooledJSONBufferCapacity {
+			bufPool.Put(buf)
+		}
+	}()
 	encoder := json.NewEncoder(buf)
 	encoder.SetEscapeHTML(escapeHTML)
 	if err := encoder.Encode(v); err != nil {
@@ -590,9 +598,7 @@ func jsonMarshal(v any, escapeHTML bool) ([]byte, error) {
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
 		buf.Truncate(buf.Len() - 1)
 	}
-	// NOTE: buf.Bytes() becomes invalid once the buffer is returned to the pool.
-	// Always copy the bytes out before returning.
-	out := append([]byte(nil), buf.Bytes()...)
+	out := bytes.Clone(buf.Bytes())
 	return out, nil
 }
 

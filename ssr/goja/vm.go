@@ -94,7 +94,7 @@ func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
 	if !vm.initialized {
 		return "", fmt.Errorf("VM not initialized")
 	}
-	buf, _ := ssr.JsonMarshal(data)
+	buf, _ := ssr.JSONMarshal(data)
 	value, err := vm.renderTemplate(goja.Undefined(), vm.runtime.ToValue(tpl), vm.runtime.ToValue(string(buf)))
 	if err != nil {
 		return "", err
@@ -113,7 +113,7 @@ func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) 
 	if !vm.initialized {
 		return "", fmt.Errorf("VM not initialized")
 	}
-	buf, _ := ssr.JsonMarshal(data)
+	buf, _ := ssr.JSONMarshal(data)
 	value, err := vm.renderComponent(goja.Undefined(), vm.runtime.ToValue(name), vm.runtime.ToValue(string(buf)))
 	if err != nil {
 		return "", err

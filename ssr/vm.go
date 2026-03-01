@@ -115,7 +115,7 @@ func (b *BaseVM) SetCache(cacheKey, result string) {
 
 // GenerateCacheKey creates a cache key from template/component name and data.
 func (b *BaseVM) GenerateCacheKey(name string, data map[string]any) string {
-	dataBytes, _ := JsonMarshal(data)
+	dataBytes, _ := JSONMarshal(data)
 	hash := md5.Sum(dataBytes)
 	return name + ":" + hex.EncodeToString(hash[:])
 }
@@ -126,20 +126,23 @@ var bufPool = sync.Pool{
 	},
 }
 
-// JsonMarshal marshals v to JSON using a buffer pool to reduce allocations.
-func JsonMarshal(v any) ([]byte, error) {
+// JSONMarshal marshals v to JSON using a buffer pool to reduce allocations.
+func JSONMarshal(v any) ([]byte, error) {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer bufPool.Put(buf)
+	defer func() {
+		buf.Reset()
+		if buf.Cap() <= 64*1024 {
+			bufPool.Put(buf)
+		}
+	}()
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
 		return nil, err
 	}
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
 		buf.Truncate(buf.Len() - 1)
 	}
-	// NOTE: buf.Bytes() becomes invalid once the buffer is returned to the pool.
-	// Always copy the bytes out before returning.
-	out := append([]byte(nil), buf.Bytes()...)
+	out := bytes.Clone(buf.Bytes())
 	return out, nil
 }
 

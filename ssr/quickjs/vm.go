@@ -82,7 +82,7 @@ func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
 		return "", fmt.Errorf("quickjs VM not initialized")
 	}
 
-	buf, err := ssr.JsonMarshal(data)
+	buf, err := ssr.JSONMarshal(data)
 	if err != nil {
 		return "", err
 	}
@@ -118,7 +118,7 @@ func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) 
 	if !vm.initialized {
 		return "", fmt.Errorf("quickjs VM not initialized")
 	}
-	buf, err := ssr.JsonMarshal(data)
+	buf, err := ssr.JSONMarshal(data)
 	if err != nil {
 		return "", err
 	}
