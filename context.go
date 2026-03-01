@@ -387,6 +387,8 @@ func (c *Context) Render(view string) error {
 
 	if c.GetHeader("X-Pjax") == "true" {
 		c.Set("_ViEW_", view)
+		c.mu.RLock()
+		defer c.mu.RUnlock()
 		return c.JSON(c.data)
 	}
 
@@ -416,7 +418,9 @@ func (c *Context) Render(view string) error {
 			return w.Write(s2b(ssrContent))
 		case "data-page":
 			c.Set("_ViEW_", view)
+			c.mu.RLock()
 			pageJSON, _ := jsonMarshal(c.data, true)
+			c.mu.RUnlock()
 			return escapeJSON(w, pageJSON)
 		case "version":
 			return w.Write(s2b(strconv.FormatInt(c.engine.bootTime, 10)))
