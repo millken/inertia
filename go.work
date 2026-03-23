@@ -1,4 +1,4 @@
-go 1.24.4
+go 1.25.0
 
 use (
 	./
@@ -7,4 +7,5 @@ use (
 	./ssr/goja
 	./ssr/quickjs
 	./ssr/v8go
+	./web
 )
