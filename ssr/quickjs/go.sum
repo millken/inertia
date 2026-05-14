@@ -2,6 +2,8 @@ github.com/buke/quickjs-go v0.6.0 h1:htSLUx+fz2D82exrEN8SCYGAX56qkxhiEYgjmfnZEnk
 github.com/buke/quickjs-go v0.6.0/go.mod h1:C32R9ThDIFSIN8jRdvSkTHBZp/uOfxi5s+/xc0lAq+I=
 github.com/buke/quickjs-go v0.6.10 h1:bH1rdFHOS3lNyc885kgj9vUfujQ7K5UQUF3QmpF8JQc=
 github.com/buke/quickjs-go v0.6.10/go.mod h1:C32R9ThDIFSIN8jRdvSkTHBZp/uOfxi5s+/xc0lAq+I=
+github.com/buke/quickjs-go v0.7.6 h1:BQrlv6/IJoJ3mK0Q2OZI5oCRUL0LcFX4dgDjT+p5qRs=
+github.com/buke/quickjs-go v0.7.6/go.mod h1:C32R9ThDIFSIN8jRdvSkTHBZp/uOfxi5s+/xc0lAq+I=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dnsoa/go/assert v1.1.2 h1:NVtMqxq3IoS17NGKoYH9Mc/vASQa5psMo7X/i+gwzyE=
