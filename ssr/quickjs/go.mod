@@ -1,6 +1,6 @@
 module github.com/millken/inertia/ssr/quickjs
 
-go 1.24.4
+go 1.26.2
 
 require (
 	github.com/buke/quickjs-go v0.7.6

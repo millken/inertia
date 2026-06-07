@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel in-progress runs for the same ref when a new commit is pushed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each path is a separate Go module. The repo's go.work ties them
+        # together so every module builds/tests against the local sources
+        # (not the published versions) — keep the workspace active in CI.
+        module:
+          - "."
+          - "middleware"
+          - "ssr"
+          - "ssr/goja"
+          - "ssr/quickjs" # cgo (quickjs-go)
+          - "ssr/v8go"     # cgo (v8go)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: gofmt
+        working-directory: ${{ matrix.module }}
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-ed:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      - name: test
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 ./...

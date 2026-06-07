@@ -9,7 +9,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/millken/inertia"
 )
@@ -138,9 +137,4 @@ func function(pc uintptr) string {
 	}
 	name = strings.ReplaceAll(name, "·", ".")
 	return name
-}
-
-// timeFormat returns a customized time string for logger.
-func timeFormat(t time.Time) string {
-	return t.Format("2006/01/02 - 15:04:05")
 }

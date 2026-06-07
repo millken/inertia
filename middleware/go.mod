@@ -1,6 +1,6 @@
 module github.com/millken/inertia/middleware
 
-go 1.24.4
+go 1.26.2
 
 require github.com/millken/inertia v1.0.0
 

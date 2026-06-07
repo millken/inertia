@@ -13,10 +13,24 @@ var (
 	ssrRenderPath = "/workspace/Codes/github.com/millken/inertia-vue-template/dist/ssr-render-cjs.js"
 )
 
-func TestVMRender(t *testing.T) {
-	if os.Getenv("ssr_render_path") != "" {
-		ssrRenderPath = os.Getenv("ssr_render_path")
+// resolveSSRBundle returns the path to the SSR bundle used by these tests,
+// honoring the ssr_render_path env var. The bundle is produced by an external
+// front-end project and is not part of this repo, so when it is unavailable
+// (e.g. in CI) the test is skipped rather than failed.
+func resolveSSRBundle(t *testing.T) string {
+	t.Helper()
+	p := ssrRenderPath
+	if env := os.Getenv("ssr_render_path"); env != "" {
+		p = env
 	}
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("SSR bundle not available (%s); set ssr_render_path to run", p)
+	}
+	return p
+}
+
+func TestVMRender(t *testing.T) {
+	ssrRenderPath = resolveSSRBundle(t)
 	r := assert.New(t)
 	vm, err := NewVM(ssr.WithBundlerFile(ssrRenderPath))
 	r.NoError(err)
@@ -39,6 +53,7 @@ func TestVMRender(t *testing.T) {
 }
 
 func TestStyle(t *testing.T) {
+	ssrRenderPath = resolveSSRBundle(t)
 	r := assert.New(t)
 	vm, err := NewVM(ssr.WithBundlerFile(ssrRenderPath))
 	r.NoError(err)
@@ -109,6 +124,7 @@ func BenchmarkVMRender(b *testing.B) {
 }
 
 func TestVMRender_Concurrent(t *testing.T) {
+	ssrRenderPath = resolveSSRBundle(t)
 	r := assert.New(t)
 	vm, err := NewVM(ssr.WithBundlerFile(ssrRenderPath))
 	r.NoError(err)

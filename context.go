@@ -299,28 +299,14 @@ func (c *Context) requestHeader(key string) string {
 	return c.Request.Header.Get(key)
 }
 func (c *Context) JSON(data any) error {
-	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-	// Security headers
-	// Prevents the browser from MIME-sniffing a response away from the declared content-type
-	c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
-	// Completely disable all forms of caching including back/forward cache
-	c.Writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
-	c.Writer.Header().Set("Pragma", "no-cache")
-	c.Writer.Header().Set("Expires", "0")
-	// Prevents some XSS attacks
-	// Note: This header is deprecated and it's recommended to use Content-Security-Policy instead
-	// However, some older browsers might still rely on it
-	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
-	// Here we disable it to avoid conflicts with modern XSS protection mechanisms
-	// that are implemented via Content-Security-Policy headers
-	c.Writer.Header().Set("X-Xss-Protection", "0")
-	c.Writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self';")
-	// Prevents the page from being displayed in an iframe to avoid clickjacking attacks
-	// Use "SAMEORIGIN" to allow iframes from the same origin
-	// or "ALLOW-FROM uri" to allow from a specific origin
-	// Here we use "DENY" to completely prevent framing
-	// For more information, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
-	c.Writer.Header().Set("X-Frame-Options", "sameorigin")
+	h := c.Writer.Header()
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	// nosniff is the one security header that genuinely matters for a JSON body:
+	// it stops the browser from sniffing/executing the response as another type.
+	h.Set("X-Content-Type-Options", "nosniff")
+	// Data responses are not cacheable by default. Document-oriented headers
+	// (CSP, X-Frame-Options) are inert on a JSON body and live on Render instead.
+	h.Set("Cache-Control", "no-store")
 	// Encode the data to JSON and write to the response
 	jsonContent, err := jsonMarshal(data, false)
 	if err != nil {
@@ -365,12 +351,16 @@ func (c *Context) SetMeta(meta Meta) {
 }
 
 func (c *Context) ClientIP() string {
-	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
-		ip, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(ip)
-	}
-	if xrip := c.GetHeader("X-Real-IP"); xrip != "" {
-		return strings.TrimSpace(xrip)
+	// Only consult proxy-supplied headers when the engine is configured to trust
+	// them; otherwise they can be spoofed by clients connecting directly.
+	if c.engine == nil || c.engine.trustProxyHeaders {
+		if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+			ip, _, _ := strings.Cut(xff, ",")
+			return strings.TrimSpace(ip)
+		}
+		if xrip := c.GetHeader("X-Real-IP"); xrip != "" {
+			return strings.TrimSpace(xrip)
+		}
 	}
 	if c.Request.RemoteAddr != "" {
 		host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
@@ -390,6 +380,17 @@ func (c *Context) Render(view string) error {
 		c.mu.RLock()
 		defer c.mu.RUnlock()
 		return c.JSON(c.data)
+	}
+
+	// This path emits an HTML document. Set Content-Type explicitly (required
+	// once nosniff is sent) and the document-oriented security headers here,
+	// where they actually take effect.
+	h := c.Writer.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("X-Frame-Options", "SAMEORIGIN")
+	if c.engine.csp != "" {
+		h.Set("Content-Security-Policy", c.engine.csp)
 	}
 
 	// 在开发模式下，优先尝试从 DevHost 获取 root HTML，获取失败则回退到本地模板

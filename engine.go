@@ -2,13 +2,18 @@
 package inertia
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/millken/inertia/router"
@@ -86,6 +91,76 @@ func WithMode(mode Mode) Option {
 	}
 }
 
+// WithReadHeaderTimeout sets the amount of time allowed to read request headers.
+// Defaults to 10s. A non-positive value disables the timeout (not recommended).
+func WithReadHeaderTimeout(d time.Duration) Option {
+	return func(e *Engine) error {
+		e.readHeaderTimeout = d
+		return nil
+	}
+}
+
+// WithReadTimeout sets the maximum duration for reading the entire request,
+// including the body. Defaults to 0 (no timeout). Avoid setting this when
+// serving large uploads, websockets or SSE.
+func WithReadTimeout(d time.Duration) Option {
+	return func(e *Engine) error {
+		e.readTimeout = d
+		return nil
+	}
+}
+
+// WithWriteTimeout sets the maximum duration before timing out writes of the
+// response. Defaults to 0 (no timeout). Avoid setting this when serving
+// streaming responses, websockets or SSE.
+func WithWriteTimeout(d time.Duration) Option {
+	return func(e *Engine) error {
+		e.writeTimeout = d
+		return nil
+	}
+}
+
+// WithIdleTimeout sets the maximum amount of time to wait for the next request
+// when keep-alives are enabled. Defaults to 120s.
+func WithIdleTimeout(d time.Duration) Option {
+	return func(e *Engine) error {
+		e.idleTimeout = d
+		return nil
+	}
+}
+
+// WithShutdownTimeout sets how long Serve waits for in-flight requests to finish
+// during graceful shutdown before giving up. Defaults to 10s.
+func WithShutdownTimeout(d time.Duration) Option {
+	return func(e *Engine) error {
+		e.shutdownTimeout = d
+		return nil
+	}
+}
+
+// WithContentSecurityPolicy sets the Content-Security-Policy header emitted on
+// HTML documents rendered by Context.Render. It is empty (unset) by default.
+// Note: the default root template includes an inline bootstrap <script>, so a
+// strict policy such as "script-src 'self'" will block it unless you also allow
+// it (e.g. with a nonce or hash).
+func WithContentSecurityPolicy(csp string) Option {
+	return func(e *Engine) error {
+		e.csp = csp
+		return nil
+	}
+}
+
+// WithTrustProxyHeaders controls whether Context.ClientIP honors the
+// X-Forwarded-For / X-Real-IP request headers. Defaults to true. Set it to
+// false when the server faces untrusted clients directly so that ClientIP
+// always reports the real RemoteAddr and cannot be spoofed.
+func WithTrustProxyHeaders(trust bool) Option {
+	return func(e *Engine) error {
+		e.trustProxyHeaders = trust
+		return nil
+	}
+}
+
 // Engine is the main Inertia instance that holds the router and middleware.
 
 type Engine struct {
@@ -103,6 +178,25 @@ type Engine struct {
 	addr               string
 	router             *router.Router[HandlerFuncs]
 	middleware         HandlerFuncs
+
+	readHeaderTimeout time.Duration
+	readTimeout       time.Duration
+	writeTimeout      time.Duration
+	idleTimeout       time.Duration
+	shutdownTimeout   time.Duration
+
+	// trustProxyHeaders controls whether ClientIP honors X-Forwarded-For /
+	// X-Real-IP. Defaults to true. Disable it when the server is exposed
+	// directly to untrusted clients to prevent IP spoofing.
+	trustProxyHeaders bool
+
+	// csp is the Content-Security-Policy applied to HTML rendered by Render.
+	// Empty by default: CSP is app-specific and a strict policy must account
+	// for the inline bootstrap script (e.g. via a nonce), so opt in explicitly.
+	csp string
+
+	serverMu sync.Mutex
+	server   *http.Server
 }
 
 func New(options ...Option) (*Engine, error) {
@@ -118,6 +212,14 @@ func New(options ...Option) (*Engine, error) {
 		endTag:             "-inertia-->",
 		MaxMultipartMemory: 32 << 20, // 32 MB
 		router:             router.New[HandlerFuncs](),
+		// ReadHeaderTimeout guards against Slowloris-style attacks and is safe even
+		// for long-lived connections (websocket/SSE) since it only bounds header reads.
+		readHeaderTimeout: 10 * time.Second,
+		// readTimeout/writeTimeout default to 0 to avoid breaking streaming, large
+		// uploads, websocket proxying (dev mode) and SSE. Set them via options if needed.
+		idleTimeout:       120 * time.Second,
+		shutdownTimeout:   10 * time.Second,
+		trustProxyHeaders: true,
 	}
 	for _, option := range options {
 		if err = option(e); err != nil {
@@ -227,6 +329,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defaultCatchAllHandler.ServeHTTP(w, r)
 }
 
+// Serve starts the HTTP server with the configured timeouts and blocks until
+// the process receives SIGINT/SIGTERM or ListenAndServe fails. On signal it
+// performs a graceful shutdown bounded by the shutdown timeout.
 func (e *Engine) Serve() error {
 	if e.IsDevelopmentMode() {
 		slog.Info("starting server", "mode", "development", "proxy", e.devAddr)
@@ -235,7 +340,54 @@ func (e *Engine) Serve() error {
 	} else {
 		slog.Info("starting server", "mode", "production", "addr", e.Addr())
 	}
-	return http.ListenAndServe(e.Addr(), e)
+
+	srv := &http.Server{
+		Addr:              e.Addr(),
+		Handler:           e,
+		ReadHeaderTimeout: e.readHeaderTimeout,
+		ReadTimeout:       e.readTimeout,
+		WriteTimeout:      e.writeTimeout,
+		IdleTimeout:       e.idleTimeout,
+	}
+	e.serverMu.Lock()
+	e.server = srv
+	e.serverMu.Unlock()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		stop() // restore default signal handling so a second signal force-quits
+		slog.Info("shutting down server", "timeout", e.shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), e.shutdownTimeout)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// Shutdown gracefully shuts down the running server without interrupting any
+// active connections, respecting the provided context's deadline. It is safe to
+// call from another goroutine. Returns nil if Serve was never started.
+func (e *Engine) Shutdown(ctx context.Context) error {
+	e.serverMu.Lock()
+	srv := e.server
+	e.serverMu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
 }
 
 func (e *Engine) devProxyForRequest() (*httputil.ReverseProxy, error) {
@@ -246,22 +398,19 @@ func (e *Engine) devProxyForRequest() (*httputil.ReverseProxy, error) {
 			return
 		}
 
-		proxy := httputil.NewSingleHostReverseProxy(target)
-		origDirector := proxy.Director
-		proxy.Director = func(req *http.Request) {
-			origPath := req.URL.Path
-			origRawQuery := req.URL.RawQuery
-			origDirector(req)
-			// Keep the original request URL path and query (avoid target path joining).
-			req.URL.Path = origPath
-			req.URL.RawQuery = origRawQuery
-			req.Host = target.Host
+		e.devProxy = &httputil.ReverseProxy{
+			Rewrite: func(pr *httputil.ProxyRequest) {
+				pr.SetURL(target)
+				// Keep the original request path and query (avoid target path joining).
+				pr.Out.URL.Path = pr.In.URL.Path
+				pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+				pr.SetXForwarded()
+			},
+			ErrorHandler: func(rw http.ResponseWriter, req *http.Request, eErr error) {
+				slog.Error("proxyToDevServer: proxy error", slog.Any("error", eErr))
+				ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
+			},
 		}
-		proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, eErr error) {
-			slog.Error("proxyToDevServer: proxy error", slog.Any("error", eErr))
-			ErrorHandlerMap[http.StatusBadGateway](rw, req, eErr)
-		}
-		e.devProxy = proxy
 	})
 
 	if e.devProxyErr != nil {

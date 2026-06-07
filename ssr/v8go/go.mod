@@ -1,6 +1,6 @@
 module github.com/millken/inertia/ssr/v8go
 
-go 1.24.4
+go 1.26.2
 
 require (
 	github.com/dnsoa/go/assert v1.1.2
