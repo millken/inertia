@@ -6,6 +6,8 @@ github.com/dnsoa/go/assert v1.1.2 h1:NVtMqxq3IoS17NGKoYH9Mc/vASQa5psMo7X/i+gwzyE
 github.com/dnsoa/go/assert v1.1.2/go.mod h1:aP8iaHTcw49posUgXy9qjr/ICSJ2HNjyQXNOJzo4Zws=
 github.com/millken/inertia/ssr v1.0.3 h1:B249mWj1twXkTvoUU6QGbKxFTQJvzc8gUQyk4qxlgXY=
 github.com/millken/inertia/ssr v1.0.3/go.mod h1:N19ayoBfkuURiPoBz2nbxVtR8RKWlffM7CVpdKpat0Y=
+github.com/millken/inertia/ssr v1.0.4 h1:LZeXIli0ksBvXLMM3fVQaP8C90biHUn+uETTix54WHk=
+github.com/millken/inertia/ssr v1.0.4/go.mod h1:MmJEmUU42IlzRNexsa6hmZsqWbg3b5S9GCz44DiUfq0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=

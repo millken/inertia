@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/dnsoa/go/assert v1.1.2
-	github.com/millken/inertia/ssr v1.0.2
+	github.com/millken/inertia/ssr v1.0.4
 	github.com/tommie/v8go v0.34.0
 )
 
