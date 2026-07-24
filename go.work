@@ -4,7 +4,5 @@ use (
 	./
 	./middleware
 	./ssr
-	./ssr/goja
 	./ssr/quickjs
-	./ssr/v8go
 )

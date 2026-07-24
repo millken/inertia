@@ -1,6 +1,7 @@
 package quickjs
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/buke/quickjs-go"
@@ -114,7 +115,22 @@ func (vm *VM) Close() {
 	<-vm.doneCh
 }
 
-func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
+// withTimeout returns ctx unchanged when it already has a deadline; otherwise it
+// derives a child bounded by the VM's configured Timeout. Note: a blocked C eval
+// cannot be hard-interrupted, so on timeout the caller unblocks but the worker
+// goroutine may finish the in-flight eval late (a genuinely hung worker poisons
+// that VM until Close; subsequent renders then fail fast on their own timeout).
+func (vm *VM) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	if vm.Options.Timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, vm.Options.Timeout)
+}
+
+func (vm *VM) RenderTemplate(ctx context.Context, tpl string, data map[string]any) (string, error) {
 	cacheKey := vm.GenerateCacheKey(tpl, data)
 	if cached, found := vm.TryCache(cacheKey); found {
 		return cached, nil
@@ -125,8 +141,10 @@ func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
 		return "", err
 	}
 
+	ctx, cancel := vm.withTimeout(ctx)
+	defer cancel()
 	script := fmt.Sprintf(`module.exports.inertiaRenderTemplate(%q, %q)`, tpl, buf)
-	result, err := vm.dispatch(script)
+	result, err := vm.dispatch(ctx, script)
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +152,7 @@ func (vm *VM) RenderTemplate(tpl string, data map[string]any) (string, error) {
 	return result, nil
 }
 
-func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) {
+func (vm *VM) RenderComponent(ctx context.Context, name string, data map[string]any) (string, error) {
 	cacheKey := vm.GenerateCacheKey(name, data)
 	if cached, found := vm.TryCache(cacheKey); found {
 		return cached, nil
@@ -145,8 +163,10 @@ func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) 
 		return "", err
 	}
 
+	ctx, cancel := vm.withTimeout(ctx)
+	defer cancel()
 	script := fmt.Sprintf(`module.exports.inertiaRenderComponent(%q, %q)`, name, buf)
-	result, err := vm.dispatch(script)
+	result, err := vm.dispatch(ctx, script)
 	if err != nil {
 		return "", err
 	}
@@ -154,9 +174,17 @@ func (vm *VM) RenderComponent(name string, data map[string]any) (string, error) 
 	return result, nil
 }
 
-func (vm *VM) dispatch(script string) (string, error) {
+func (vm *VM) dispatch(ctx context.Context, script string) (string, error) {
 	ch := make(chan renderResult, 1)
-	vm.reqCh <- renderRequest{script: script, result: ch}
-	res := <-ch
-	return res.value, res.err
+	select {
+	case vm.reqCh <- renderRequest{script: script, result: ch}:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	select {
+	case res := <-ch:
+		return res.value, res.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }

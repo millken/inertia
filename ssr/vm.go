@@ -3,16 +3,18 @@ package ssr
 import (
 	"bytes"
 	"container/list"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 )
 
 type VM interface {
-	RenderTemplate(tpl string, data map[string]any) (string, error)
-	RenderComponent(name string, data map[string]any) (string, error)
+	RenderTemplate(ctx context.Context, tpl string, data map[string]any) (string, error)
+	RenderComponent(ctx context.Context, name string, data map[string]any) (string, error)
 	Close()
 }
 
@@ -24,10 +26,11 @@ type Cacher interface {
 
 // VMOptions holds options for creating a VM. It now supports optional caching.
 type VMOptions struct {
-	BundlerJS     string // JavaScript code that exports inertiaRenderTemplate and inertiaRenderComponent functions
-	CacheEnabled  bool   // whether caching is enabled
-	CacheCapacity int    // LRU capacity when using the built-in LRU cache
-	Cache         Cacher // optional custom cache implementation
+	BundlerJS     string        // JavaScript code that exports inertiaRenderTemplate and inertiaRenderComponent functions
+	CacheEnabled  bool          // whether caching is enabled
+	CacheCapacity int           // LRU capacity when using the built-in LRU cache
+	Cache         Cacher        // optional custom cache implementation
+	Timeout       time.Duration // per-render timeout, applied when the caller's ctx has no deadline
 }
 
 // Option is a function that configures a VMOptions.
@@ -81,6 +84,15 @@ func WithCacher(c Cacher) Option {
 	}
 }
 
+// WithTimeout sets the per-render timeout. A VM applies it when the context
+// passed to Render* has no deadline of its own. Defaults to 10s (see NewBaseVM).
+func WithTimeout(d time.Duration) Option {
+	return func(opts *VMOptions) error {
+		opts.Timeout = d
+		return nil
+	}
+}
+
 // BaseVM provides common functionality for VM implementations including caching support.
 type BaseVM struct {
 	Options *VMOptions
@@ -93,6 +105,9 @@ func NewBaseVM(opts ...Option) (*BaseVM, error) {
 		if err := opt(options); err != nil {
 			return nil, err
 		}
+	}
+	if options.Timeout <= 0 {
+		options.Timeout = 10 * time.Second
 	}
 	return &BaseVM{Options: options}, nil
 }

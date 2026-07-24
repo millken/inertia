@@ -1,6 +1,7 @@
 package ssr
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -17,6 +18,7 @@ type Pool struct {
 }
 
 type renderTask struct {
+	ctx  context.Context
 	kind int // 0: template, 1: component
 	tpl  string
 	name string
@@ -63,47 +65,80 @@ func (p *Pool) runWorker(vm VM) {
 		if task == nil {
 			continue
 		}
-		switch task.kind {
-		case 0:
-			html, err := vm.RenderTemplate(task.tpl, task.data)
-			task.res <- renderResult{html: html, err: err}
-		case 1:
-			html, err := vm.RenderComponent(task.name, task.data)
-			task.res <- renderResult{html: html, err: err}
-		default:
-			task.res <- renderResult{html: "", err: fmt.Errorf("unknown task kind: %d", task.kind)}
-		}
+		p.execTask(vm, task)
 	}
+}
+
+// execTask runs one render with panic recovery so a panicking VM can never
+// deadlock the caller on <-task.res.
+func (p *Pool) execTask(vm VM, task *renderTask) {
+	defer func() {
+		if r := recover(); r != nil {
+			task.res <- renderResult{err: fmt.Errorf("ssr: render panic recovered: %v", r)}
+		}
+	}()
+	var (
+		html string
+		err  error
+	)
+	switch task.kind {
+	case 0:
+		html, err = vm.RenderTemplate(task.ctx, task.tpl, task.data)
+	case 1:
+		html, err = vm.RenderComponent(task.ctx, task.name, task.data)
+	default:
+		err = fmt.Errorf("unknown task kind: %d", task.kind)
+	}
+	task.res <- renderResult{html: html, err: err}
 }
 
 // RenderTemplate dispatches a template render to the pool and waits for result.
-func (p *Pool) RenderTemplate(tpl string, data map[string]any) (string, error) {
+// Both the dispatch and the wait honor ctx: a cancelled/deadlined context
+// unblocks the caller even if the pool is saturated or a worker is stuck.
+func (p *Pool) RenderTemplate(ctx context.Context, tpl string, data map[string]any) (string, error) {
 	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	closed := p.closed
+	p.mu.Unlock()
+	if closed {
 		return "", fmt.Errorf("pool closed")
 	}
-	p.mu.Unlock()
 
-	task := &renderTask{kind: 0, tpl: tpl, data: data, res: make(chan renderResult, 1)}
-	p.tasks <- task
-	r := <-task.res
-	return r.html, r.err
+	task := &renderTask{ctx: ctx, kind: 0, tpl: tpl, data: data, res: make(chan renderResult, 1)}
+	select {
+	case p.tasks <- task:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	select {
+	case r := <-task.res:
+		return r.html, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // RenderComponent dispatches a component render to the pool and waits for result.
-func (p *Pool) RenderComponent(name string, data map[string]any) (string, error) {
+// See RenderTemplate for ctx semantics.
+func (p *Pool) RenderComponent(ctx context.Context, name string, data map[string]any) (string, error) {
 	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	closed := p.closed
+	p.mu.Unlock()
+	if closed {
 		return "", fmt.Errorf("pool closed")
 	}
-	p.mu.Unlock()
 
-	task := &renderTask{kind: 1, name: name, data: data, res: make(chan renderResult, 1)}
-	p.tasks <- task
-	r := <-task.res
-	return r.html, r.err
+	task := &renderTask{ctx: ctx, kind: 1, name: name, data: data, res: make(chan renderResult, 1)}
+	select {
+	case p.tasks <- task:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	select {
+	case r := <-task.res:
+		return r.html, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // Close shuts down the pool and closes all underlying VMs.

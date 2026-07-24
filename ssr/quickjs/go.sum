@@ -2,10 +2,6 @@ github.com/buke/quickjs-go v0.7.6 h1:BQrlv6/IJoJ3mK0Q2OZI5oCRUL0LcFX4dgDjT+p5qRs
 github.com/buke/quickjs-go v0.7.6/go.mod h1:C32R9ThDIFSIN8jRdvSkTHBZp/uOfxi5s+/xc0lAq+I=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dnsoa/go/assert v1.1.2 h1:NVtMqxq3IoS17NGKoYH9Mc/vASQa5psMo7X/i+gwzyE=
-github.com/dnsoa/go/assert v1.1.2/go.mod h1:aP8iaHTcw49posUgXy9qjr/ICSJ2HNjyQXNOJzo4Zws=
-github.com/millken/inertia/ssr v1.0.3 h1:B249mWj1twXkTvoUU6QGbKxFTQJvzc8gUQyk4qxlgXY=
-github.com/millken/inertia/ssr v1.0.3/go.mod h1:N19ayoBfkuURiPoBz2nbxVtR8RKWlffM7CVpdKpat0Y=
 github.com/millken/inertia/ssr v1.0.4 h1:LZeXIli0ksBvXLMM3fVQaP8C90biHUn+uETTix54WHk=
 github.com/millken/inertia/ssr v1.0.4/go.mod h1:MmJEmUU42IlzRNexsa6hmZsqWbg3b5S9GCz44DiUfq0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
