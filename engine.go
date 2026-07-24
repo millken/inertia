@@ -69,6 +69,16 @@ func WithDevAddr(addr string) Option {
 	}
 }
 
+// WithAddr sets the address Serve listens on (the bind address, e.g. ":8080").
+// Defaults to ":5000". This is distinct from WithDevAddr, which is the Vite
+// dev-server URL the engine proxies to in development mode.
+func WithAddr(addr string) Option {
+	return func(e *Engine) error {
+		e.addr = addr
+		return nil
+	}
+}
+
 func WithTags(startTag, endTag string) Option {
 	return func(e *Engine) error {
 		e.startTag = startTag
@@ -197,6 +207,9 @@ type Engine struct {
 
 	serverMu sync.Mutex
 	server   *http.Server
+
+	// ssrCloseOnce guards Close so the SSR VM is torn down exactly once.
+	ssrCloseOnce sync.Once
 }
 
 func New(options ...Option) (*Engine, error) {
@@ -388,6 +401,19 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	return srv.Shutdown(ctx)
+}
+
+// Close releases engine resources, notably the SSR VM. It is safe to call
+// multiple times. Serve shuts the HTTP server down itself on signal, so Close
+// only tears down the SSR VM (which Serve never closes). Callers that use Serve
+// should typically `defer eng.Close()` so the VM is released on exit.
+func (e *Engine) Close() error {
+	e.ssrCloseOnce.Do(func() {
+		if e.ssr != nil {
+			e.ssr.Close()
+		}
+	})
+	return nil
 }
 
 func (e *Engine) devProxyForRequest() (*httputil.ReverseProxy, error) {
