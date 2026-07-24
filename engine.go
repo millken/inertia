@@ -188,6 +188,10 @@ type Engine struct {
 	addr               string
 	router             *router.Router[HandlerFuncs]
 	middleware         HandlerFuncs
+	// regErr accumulates route-registration errors (e.g. duplicate routes) from
+	// GET/POST/... so registration can stay ergonomic (no error return per call)
+	// while Serve still fails fast. See RegistrationError.
+	regErr error
 
 	readHeaderTimeout time.Duration
 	readTimeout       time.Duration
@@ -252,39 +256,39 @@ func (e *Engine) IsSSRMode() bool {
 	return e.mode == ModeSSR
 }
 
-func (e *Engine) GET(path string, fn ...HandlerFunc) {
-	e.router.Add("GET", path, fn)
-}
+func (e *Engine) GET(path string, fn ...HandlerFunc) { e.addRoute("GET", path, fn) }
 
-func (e *Engine) POST(path string, fn ...HandlerFunc) {
-	e.router.Add("POST", path, fn)
-}
+func (e *Engine) POST(path string, fn ...HandlerFunc) { e.addRoute("POST", path, fn) }
 
-func (e *Engine) PUT(path string, fn ...HandlerFunc) {
-	e.router.Add("PUT", path, fn)
-}
+func (e *Engine) PUT(path string, fn ...HandlerFunc) { e.addRoute("PUT", path, fn) }
 
-func (e *Engine) DELETE(path string, fn ...HandlerFunc) {
-	e.router.Add("DELETE", path, fn)
-}
+func (e *Engine) DELETE(path string, fn ...HandlerFunc) { e.addRoute("DELETE", path, fn) }
 
-func (e *Engine) PATCH(path string, fn ...HandlerFunc) {
-	e.router.Add("PATCH", path, fn)
-}
+func (e *Engine) PATCH(path string, fn ...HandlerFunc) { e.addRoute("PATCH", path, fn) }
 
-func (e *Engine) OPTIONS(path string, fn ...HandlerFunc) {
-	e.router.Add("OPTIONS", path, fn)
-}
+func (e *Engine) OPTIONS(path string, fn ...HandlerFunc) { e.addRoute("OPTIONS", path, fn) }
 
-func (e *Engine) HEAD(path string, fn ...HandlerFunc) {
-	e.router.Add("HEAD", path, fn)
-}
+func (e *Engine) HEAD(path string, fn ...HandlerFunc) { e.addRoute("HEAD", path, fn) }
 
 func (e *Engine) ANY(path string, fn ...HandlerFunc) {
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"} {
-		e.router.Add(method, path, fn)
+		e.addRoute(method, path, fn)
 	}
 }
+
+// addRoute registers a handler and records any registration error (e.g. a
+// duplicate route) into regErr instead of returning it, so the verb methods
+// stay a plain void call. Serve surfaces the accumulated error before binding.
+func (e *Engine) addRoute(method, path string, fn HandlerFuncs) {
+	if err := e.router.Add(method, path, fn); err != nil {
+		e.regErr = errors.Join(e.regErr, fmt.Errorf("register %s %s: %w", method, path, err))
+	}
+}
+
+// RegistrationError returns the accumulated route-registration error, or nil if
+// every route registered cleanly. Serve returns this too; the accessor lets
+// callers check explicitly before serving.
+func (e *Engine) RegistrationError() error { return e.regErr }
 
 func (e *Engine) Addr() string {
 	return e.addr
@@ -346,6 +350,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // the process receives SIGINT/SIGTERM or ListenAndServe fails. On signal it
 // performs a graceful shutdown bounded by the shutdown timeout.
 func (e *Engine) Serve() error {
+	// Fail fast on route-registration errors (e.g. duplicate routes) before
+	// binding a listener, so a misconfiguration surfaces as a clean startup
+	// error instead of a silently overwritten handler.
+	if e.regErr != nil {
+		return e.regErr
+	}
+
 	if e.IsDevelopmentMode() {
 		slog.Info("starting server", "mode", "development", "proxy", e.devAddr)
 	} else if e.IsSSRMode() {
