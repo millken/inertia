@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/buke/quickjs-go v0.7.6
-	github.com/millken/inertia/ssr v1.0.4
+	github.com/millken/inertia/ssr v1.1.0
 )
 
 // replace github.com/millken/inertia/ssr => ../
