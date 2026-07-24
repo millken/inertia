@@ -4,6 +4,6 @@ go 1.26.2
 
 require github.com/millken/inertia v1.0.0
 
-require github.com/millken/inertia/ssr v1.0.1 // indirect
+require github.com/millken/inertia/ssr v1.1.0 // indirect
 
 // replace github.com/millken/inertia => ../
