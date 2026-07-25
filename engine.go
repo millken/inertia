@@ -334,6 +334,12 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Start execution chain
 		ctx.Next()
 
+		// responseWriter.WriteHeader only records the status; it reaches the wire
+		// on the first body write. Flush here so a handler that sets a status and
+		// writes nothing (a 302, a 304, an AbortWithStatus) still sends it instead
+		// of falling through to net/http's implicit 200.
+		ctx.writermem.WriteHeaderNow()
+
 		releaseContext(ctx)
 		return
 	}

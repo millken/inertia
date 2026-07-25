@@ -372,10 +372,57 @@ func (c *Context) ClientIP() string {
 	return ""
 }
 
+// pjaxHeader marks a request as a PJAX navigation. Header names are
+// case-insensitive and Go canonicalizes them, so a client sending X-PJAX
+// matches this too.
+const pjaxHeader = "X-Pjax"
+
+// isPjax reports whether the client wants a PJAX payload rather than a document.
+func (c *Context) isPjax() bool {
+	return c.GetHeader(pjaxHeader) == "true"
+}
+
+// varyOnPjax announces that this URL has more than one representation. Without
+// it, a cache holding the JSON answer can replay it for a plain navigation and
+// hand the user a page of raw JSON.
+//
+// Add rather than Set: middleware may already have registered a Vary of its own
+// (middleware.Gzip adds Accept-Encoding before the handler runs), and dropping
+// that would let a shared cache hand a gzipped body to a client that never asked
+// for one.
+func (c *Context) varyOnPjax() {
+	c.Writer.Header().Add("Vary", pjaxHeader)
+}
+
+// redirectPayload is the PJAX answer to a redirect. A named struct keeps
+// encoding/json on its cached-encoder path, which a map[string]string misses.
+type redirectPayload struct {
+	Redirect string `json:"redirect"`
+}
+
+// Redirect sends the client to location. A PJAX request gets the destination as
+// JSON with a 200; anything else gets a normal 302.
+//
+// The split exists because a PJAX client cannot act on a 3xx: fetch follows it
+// transparently and re-sends the marker header, so the client receives the
+// target page's payload while still believing it is on the original URL, and the
+// address bar ends up disagreeing with what is on screen. Handing back the
+// destination lets the client navigate deliberately and keep the two in sync.
+func (c *Context) Redirect(location string) error {
+	c.varyOnPjax()
+	if c.isPjax() {
+		return c.JSON(redirectPayload{Redirect: location})
+	}
+	c.Header("Location", location)
+	c.Status(http.StatusFound)
+	return nil
+}
+
 func (c *Context) Render(view string) error {
 	var err error
 
-	if c.GetHeader("X-Pjax") == "true" {
+	c.varyOnPjax()
+	if c.isPjax() {
 		c.Set("_ViEW_", view)
 		c.mu.RLock()
 		defer c.mu.RUnlock()
