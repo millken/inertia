@@ -321,6 +321,12 @@ func (c *Context) AbortWithError(code int, err error) {
 	c.Writer.Write([]byte(err.Error()))
 }
 
+// Set stores a key-value pair in the data map, which Render serializes into
+// every response — it is the props payload sent to the client.
+//
+// Do NOT store credentials, sessions, auth principals, or any other value that
+// must not reach the client here: anything in this map is part of the rendered
+// output. Use SetContext for request-scoped, server-only state.
 func (c *Context) Set(key string, value any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -344,6 +350,23 @@ func (c *Context) Data() map[string]any {
 		return map[string]any{}
 	}
 	return maps.Clone(c.data)
+}
+
+// SetContext stores a request-scoped value on the underlying request context.
+// Unlike Set, values stored here are NEVER serialized into Render, JSON, or SSR
+// output — use this for middleware-private state such as sessions, auth
+// principals, or rate-limit counters.
+//
+// Read it back with c.Value(key), which falls through to the request context,
+// or c.Request.Context().Value(key). Prefer a typed, non-string key: Value
+// checks the string-keyed data map first, so a typed key avoids any ambiguity
+// with Set.
+func (c *Context) SetContext(key, value any) {
+	if c.Request == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(
+		context.WithValue(c.Request.Context(), key, value))
 }
 
 func (c *Context) SetMeta(meta Meta) {
@@ -423,10 +446,7 @@ func (c *Context) Render(view string) error {
 
 	c.varyOnPjax()
 	if c.isPjax() {
-		c.Set("_ViEW_", view)
-		c.mu.RLock()
-		defer c.mu.RUnlock()
-		return c.JSON(c.data)
+		return c.JSON(c.renderPayload(view))
 	}
 
 	// This path emits an HTML document. Set Content-Type explicitly (required
@@ -469,10 +489,7 @@ func (c *Context) Render(view string) error {
 		case "ssr-content":
 			return w.Write(s2b(ssrContent))
 		case "data-page":
-			c.Set("_ViEW_", view)
-			c.mu.RLock()
-			pageJSON, _ := jsonMarshal(c.data, true)
-			c.mu.RUnlock()
+			pageJSON, _ := jsonMarshal(c.renderPayload(view), true)
 			return escapeJSON(w, pageJSON)
 		case "version":
 			return w.Write(s2b(strconv.FormatInt(c.engine.bootTime, 10)))
@@ -482,6 +499,23 @@ func (c *Context) Render(view string) error {
 	})
 
 	return err
+}
+
+// viewKey is the wire-format key carrying the current component view to the
+// client. It is spliced into the rendered payload rather than stored in c.data,
+// so data stays a pure props map and request-private state (SetContext) cannot
+// leak through it.
+const viewKey = "_ViEW_"
+
+// renderPayload returns the props data with the current view added under
+// viewKey. It takes the read lock itself; callers must not already hold it.
+func (c *Context) renderPayload(view string) map[string]any {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make(map[string]any, len(c.data)+1)
+	maps.Copy(out, c.data)
+	out[viewKey] = view
+	return out
 }
 
 // fetchDevTemplate fetches root HTML from the dev server, falling back to the local template on any error.
